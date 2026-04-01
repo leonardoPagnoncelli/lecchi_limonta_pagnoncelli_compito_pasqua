@@ -1,6 +1,8 @@
 import random
 import sys
 import time
+import json
+import os
 from termcolor import colored, cprint
 
 try:
@@ -11,11 +13,135 @@ except ImportError:
     is_windows = False
 
 # ==========================================
-# FUNZIONI DI UTILI E STAMPA
+# GESTIONE DATI E SALVATAGGI
 # ==========================================
 
+FILE_SALVATAGGIO = "galeone_save.json"
+
+def carica_dati():
+    """Carica i dati dal file JSON e inizializza la struttura base."""
+    dati_base = {
+        "stats": {
+            "morti": 0,
+            "vittorie_epiche": 0,
+            "vittorie_pirro": 0,
+            "rovine": 0
+        },
+        "salvataggi": {}
+    }
+    
+    if os.path.exists(FILE_SALVATAGGIO):
+        try:
+            with open(FILE_SALVATAGGIO, "r") as f:
+                dati_letti = json.load(f)
+                
+                if "stats" in dati_letti:
+                    dati_base["stats"] = dati_letti["stats"]
+                if "salvataggi" in dati_letti:
+                    dati_base["salvataggi"].update(dati_letti["salvataggi"])
+        except Exception:
+            pass
+            
+    return dati_base
+
+def salva_dati(dati):
+    """Salva il dizionario dati nel file JSON."""
+    with open(FILE_SALVATAGGIO, "w") as f:
+        json.dump(dati, f, indent=4)
+
+def archivia_partita(capitano, stato, esito):
+    """Archivia una partita terminata chiedendo un nome all'utente."""
+    print()
+    nome = input(colored("👉 Inserisci un nome per registrare questa partita negli archivi (Invio per casuale): ", "cyan")).strip()
+    if not nome:
+        nome = f"Cronaca_di_{capitano}_{random.randint(1000,9999)}"
+        
+    dati = carica_dati()
+    stato["esito"] = esito
+    dati["salvataggi"][nome] = {
+        "capitano": capitano,
+        "stato": stato
+    }
+    salva_dati(dati)
+    cprint(f"✅ Partita '{nome}' registrata negli archivi.", "green")
+
+def mostra_statistiche_globali(dati):
+    """Stampa le statistiche globali accumulate lette dal JSON."""
+    cprint("\n" + "="*60, "cyan", attrs=["bold"])
+    cprint(" 📊 --- REGISTRO DEL CAPITANO (STATISTICHE GLOBALI) --- 📊 ", "yellow", attrs=["bold"])
+    cprint("="*60, "cyan", attrs=["bold"])
+    
+    stats = dati["stats"]
+    print(f"💀 Morti in mare:        {colored(stats['morti'], 'red', attrs=['bold'])}")
+    print(f"👑 Vittorie Epiche:      {colored(stats['vittorie_epiche'], 'yellow', attrs=['bold'])}")
+    print(f"⚖️  Vittorie di Pirro:   {colored(stats['vittorie_pirro'], 'cyan', attrs=['bold'])}")
+    print(f"⛓️  Rovina Totale:       {colored(stats['rovine'], 'dark_grey', attrs=['bold'])}")
+    
+    input(colored("\n📖 [Premi Invio per tornare al Menù] ", "dark_grey"))
+
+# ==========================================
+# FUNZIONI DI INPUT E STAMPA
+# ==========================================
+
+def leggi_input(prompt_testo):
+    """
+    Sostituisce input() standard. Legge carattere per carattere.
+    Se viene premuto ESC (\x1b), solleva InterruptedError per forzare il salvataggio.
+    """
+    sys.stdout.write(prompt_testo)
+    sys.stdout.flush()
+    risposta = ""
+    
+    while True:
+        if is_windows:
+            c = msvcrt.getch()
+            if c == b'\x1b': # ESC
+                print()
+                raise InterruptedError("ESC")
+            elif c in (b'\r', b'\n'):
+                print()
+                return risposta
+            elif c == b'\x08': # Backspace
+                if len(risposta) > 0:
+                    risposta = risposta[:-1]
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            else:
+                try:
+                    char = c.decode('utf-8')
+                    risposta += char
+                    sys.stdout.write(char)
+                    sys.stdout.flush()
+                except: pass
+        else:
+            import tty, termios
+            fd = sys.stdin.fileno()
+            old_settings = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                c = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+            if c == '\x1b': # ESC
+                print()
+                raise InterruptedError("ESC")
+            elif c in ('\r', '\n'):
+                print()
+                return risposta
+            elif c in ('\x7f', '\x08'): # Backspace
+                if len(risposta) > 0:
+                    risposta = risposta[:-1]
+                    sys.stdout.write('\b \b')
+                    sys.stdout.flush()
+            elif c == '\x03': # Ctrl+C
+                raise KeyboardInterrupt
+            else:
+                risposta += c
+                sys.stdout.write(c)
+                sys.stdout.flush()
+
 def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
-    """Stampa il testo un carattere alla volta, supportando i colori di termcolor."""
     salta_animazione = False
     
     if is_windows:
@@ -35,7 +161,6 @@ def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
                     sys.stdin.readline()
                     salta_animazione = True
         
-        # Applica il colore al singolo carattere se specificato
         char_da_stampare = colored(carattere, colore, attrs=attributi) if colore else carattere
         sys.stdout.write(char_da_stampare)
         sys.stdout.flush()
@@ -45,14 +170,20 @@ def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
             
     print()
 
-def game_over(messaggio):
-    """Gestisce la fine prematura del gioco."""
+def game_over(messaggio, stato, capitano):
+    """Gestisce la fine prematura del gioco, aggiorna le stats e archivia la run."""
+    dati = carica_dati()
+    dati["stats"]["morti"] += 1
+    salva_dati(dati)
+
     print()
     cprint("="*60, "red", attrs=["bold"])
     stampa_lenta(messaggio, "red")
     cprint("\n💀 === GAME OVER === 💀\n", "red", attrs=["bold", "blink"])
     cprint("="*60, "red", attrs=["bold"])
-    sys.exit()
+    
+    archivia_partita(capitano, stato, "Morto in mare")
+    return False
 
 def stampa_risorse(stato):
     cprint(f"👥 Ciurma: {sum(stato['equipaggio'].values())}/16 | 🪙 Budget: {stato['budget']} | 🥩 Cibo: {stato['cibo']} | 💧 Acqua: {stato['acqua']}", "cyan", attrs=["bold"])
@@ -68,7 +199,7 @@ def evento_1_calma_piatta(stato):
     stampa_lenta("☀️ Il vento muore con un ultimo, debole sospiro. L'oceano diventa uno specchio d'olio nero.", "yellow")
     stampa_lenta("Siete prigionieri della 'Calma Piatta'. Il sole a picco trasforma il ponte in una piastra rovente.", "yellow")
     
-    scelta = input(colored("👉 [N] Affidati al Navigatore | [R] Fai remare i marinai | [A] Attendi pregando: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [N] Affidati al Navigatore | [R] Fai remare i marinai | [A] Attendi pregando: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'N':
         if stato['equipaggio']['navigatori'] > 0 and stato['attrezzature']['strumenti_navigazione']:
@@ -96,8 +227,7 @@ def evento_1_calma_piatta(stato):
 
 def evento_2_relitto(stato):
     stampa_lenta("🏚️ La nebbia si alza. A un miglio dondola la sagoma spettrale di una caravella. Odora di morte e spezie.", "cyan")
-    
-    scelta = input(colored("👉 [E] Esplora con cautela | [S] Saccheggia in fretta | [I] Ignora il relitto: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [E] Esplora con cautela | [S] Saccheggia in fretta | [I] Ignora il relitto: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'E':
         if stato['equipaggio']['marinai'] > 0 and stato['attrezzature']['armi']:
@@ -128,8 +258,7 @@ def evento_2_relitto(stato):
 def evento_3_sirene(stato):
     stampa_lenta("🧜‍♀️ Un banco di nebbia luminescente vi avvolge. Si alza un canto etereo che spezza la mente.", "cyan")
     stampa_lenta("I marinai iniziano a camminare in bilico sulle ringhiere, attirati dall'acqua nera.", "yellow")
-    
-    scelta = input(colored("👉 [C] Grog del Cuoco | [F] Spara in aria (Armi) | [L] Legali agli alberi: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [C] Grog del Cuoco | [F] Spara in aria (Armi) | [L] Legali agli alberi: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'C':
         if stato['equipaggio']['cuochi'] > 0:
@@ -158,8 +287,7 @@ def evento_3_sirene(stato):
 
 def evento_4_topi(stato):
     stampa_lenta("🐀 Migliaia di squittii frenetici provengono dalla stiva. Un'orda di ratti neri attacca le gallette!", "yellow")
-    
-    scelta = input(colored("👉 [M] Marinai all'attacco | [V] Veleno del Medico | [S] Sigilla le paratie: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [M] Marinai all'attacco | [V] Veleno del Medico | [S] Sigilla le paratie: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'M':
         if stato['equipaggio']['marinai'] >= 2:
@@ -186,8 +314,7 @@ def evento_4_topi(stato):
 
 def evento_5_vento_perfetto(stato):
     stampa_lenta("🌪️ Il cielo si tinge di viola livido. Il 'Vento del Diavolo' sta per investire le vele.", "cyan")
-    
-    scelta = input(colored("👉 [C] Cavalca la tempesta (Rischio) | [A] Ammaina le vele e frena: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [C] Cavalca la tempesta (Rischio) | [A] Ammaina le vele e frena: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'C':
         if random.random() > 0.4:
@@ -206,8 +333,7 @@ def evento_5_vento_perfetto(stato):
 
 def evento_6_scoglio_nascosto(stato):
     stampa_lenta("💥 BOOM! Avete urtato le 'Fauci di Pietra'. L'acqua entra a fiotti nella stiva!", "red", attrs=["bold"])
-    
-    scelta = input(colored("👉 [C] Carpentieri | [G] Getta il carico | [T] Tappa alla buona: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [C] Carpentieri | [G] Getta il carico | [T] Tappa alla buona: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'C':
         if stato['equipaggio']['carpentieri'] > 0 and stato['attrezzature']['attrezzi_carpentiere']:
@@ -229,8 +355,7 @@ def evento_6_scoglio_nascosto(stato):
 
 def evento_7_tentacoli(stato):
     stampa_lenta("🦑 L'oceano ribolle. Due tentacoli colossali si avvolgono attorno all'albero maestro. Il Kraken!", "red", attrs=["bold"])
-    
-    scelta = input(colored("👉 [F] Fuoco a Volontà (Armi) | [E] Getta l'esca (Cibo): ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [F] Fuoco a Volontà (Armi) | [E] Getta l'esca (Cibo): ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'F':
         if stato['attrezzature']['armi'] and stato['equipaggio']['marinai'] > 0:
@@ -247,8 +372,7 @@ def evento_7_tentacoli(stato):
 
 def evento_8_febbre(stato):
     stampa_lenta("🤒 La 'Morte Sudata'. Una febbre letale cuoce le persone dall'interno. Il panico dilaga.", "yellow")
-    
-    scelta = input(colored("👉 [Q] Quarantena (Medici) | [M] Getta i malati in mare | [P] Prega e aspetta: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [Q] Quarantena (Medici) | [M] Getta i malati in mare | [P] Prega e aspetta: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'Q':
         if stato['equipaggio']['medici'] > 0 and stato['attrezzature']['kit_medico']:
@@ -277,8 +401,7 @@ def evento_8_febbre(stato):
 
 def evento_9_mercante_smarrito(stato):
     stampa_lenta("👻 Appare un fluyt olandese. Uno scheletro vi offre scorte squisite in cambio di 150 denari.", "cyan")
-    
-    scelta = input(colored("👉 [C] Compra (150🪙) | [A] Abborda per rubarle | [I] Ignora il fantasma: ", "magenta", attrs=["bold"])).upper().strip()
+    scelta = leggi_input(colored("👉 [C] Compra (150🪙) | [A] Abborda per rubarle | [I] Ignora il fantasma: ", "magenta", attrs=["bold"])).upper().strip()
     
     if scelta == 'C':
         if stato['budget'] >= 150:
@@ -304,7 +427,6 @@ def evento_9_mercante_smarrito(stato):
         stampa_lenta("🌫️ La superstizione ti salva la vita. Li guardi scomparire nel grigio dell'oceano.", "cyan")
 
 def gestisci_evento_casuale(stato):
-    """Sceglie e avvia un evento casuale e stampa un separatore."""
     cprint("\n" + "~"*60, "blue", attrs=["bold"])
     cprint("⚠️  EVENTO IN MARE!", "yellow", attrs=["bold", "blink"])
     eventi_disponibili = [
@@ -312,8 +434,7 @@ def gestisci_evento_casuale(stato):
         evento_4_topi, evento_5_vento_perfetto, evento_6_scoglio_nascosto,
         evento_7_tentacoli, evento_8_febbre, evento_9_mercante_smarrito
     ]
-    evento_scelto = random.choice(eventi_disponibili)
-    evento_scelto(stato)
+    random.choice(eventi_disponibili)(stato)
     cprint("~"*60, "blue", attrs=["bold"])
 
 # ==========================================
@@ -330,11 +451,12 @@ def introduzione():
     stampa_lenta("Di fronte a te riposa il possente galeone 'La Maledizione d'Oro'.", "cyan")
     stampa_lenta("Il tuo obiettivo: trovare l'Isola del Sole, strappare le spezie ai selvaggi e tornare vivo.", "cyan", ["bold"])
     
-    capitano = input(colored("\n🏴‍☠️  Capitano, qual è il tuo nome? ", "yellow", attrs=["bold"])).strip().capitalize()
+    capitano = leggi_input(colored("\n🏴‍☠️  Capitano, qual è il tuo nome? ", "yellow", attrs=["bold"])).strip().capitalize()
+    if not capitano: capitano = "Senza Nome"
     stampa_lenta(f"Che Dio abbia pietà della tua anima, Capitano {capitano}.", "red", ["bold"])
     return capitano
 
-def fase_arruolamento(stato):
+def fase_arruolamento(stato, capitano):
     costo_membro = 50
     stampa_lenta("\nEntri in una bettola fumosa. Facce sfregiate ti fissano. È ora di formare la ciurma.", "cyan")
     
@@ -342,7 +464,6 @@ def fase_arruolamento(stato):
         print()
         stampa_risorse(stato)
         
-        # Menu stampato esattamente con lo stile richiesto
         print(colored("\n🍻 -- LA TAVERNA DEL PORTO (ARRUOLAMENTO) --\n", "green", attrs=["bold"]))
         print(f"1. 🪢 Marinaio      (A bordo: {stato['equipaggio']['marinai']})")
         print(f"2. 🔨 Carpentiere   (A bordo: {stato['equipaggio']['carpentieri']})")
@@ -351,7 +472,7 @@ def fase_arruolamento(stato):
         print(f"5. 🧭 Navigatore    (A bordo: {stato['equipaggio']['navigatori']})")
         print(colored("0. 🚪 Torna al molo (Termina Arruolamento)", "red", attrs=["bold"]))
         
-        scelta = input(colored(f"\n👉 Scegli chi assoldare (0-5) [-{costo_membro}🪙]: ", "magenta", attrs=["bold"])).strip()
+        scelta = leggi_input(colored(f"\n👉 Scegli chi assoldare (0-5) [-{costo_membro}🪙]: ", "magenta", attrs=["bold"])).strip()
         
         if scelta == "0":
             stampa_lenta("Smetti di versare rum e ti prepari a lasciare la taverna.", "cyan")
@@ -380,7 +501,8 @@ def fase_arruolamento(stato):
             cprint("❌ Scelta non valida. I tagliagole al tavolo ridono di te. Scegli un numero dal menù.", "red")
             
     if sum(stato['equipaggio'].values()) == 0:
-        game_over("Senza una ciurma, i tuoi creditori ti raggiungono sul molo. La tua gola viene tagliata per un pugno di debiti.")
+        return game_over("Senza una ciurma, i tuoi creditori ti raggiungono sul molo. La tua gola viene tagliata per un pugno di debiti.", stato, capitano)
+    return True
 
 def fase_arsenale(stato):
     costo_attrezzatura = 150
@@ -394,7 +516,7 @@ def fase_arsenale(stato):
             print()
             stampa_risorse(stato)
             icona = icone_equip.get(equip, "📦")
-            scelta_eq = input(colored(f"👉 Vuoi comprare {icona} '{equip.replace('_', ' ').title()}' per {costo_attrezzatura}🪙? (S/N): ", "magenta", attrs=["bold"])).upper().strip()
+            scelta_eq = leggi_input(colored(f"👉 Vuoi comprare {icona} '{equip.replace('_', ' ').title()}' per {costo_attrezzatura}🪙? (S/N): ", "magenta", attrs=["bold"])).upper().strip()
             if scelta_eq == 'S':
                 stato['attrezzature'][equip] = True
                 stato['budget'] -= costo_attrezzatura
@@ -402,6 +524,7 @@ def fase_arsenale(stato):
         else:
             cprint("\n❌ L'armaiolo ti caccia dal negozio. Non hai più denari.", "red")
             break
+    return True
 
 def fase_mercato_nero(stato):
     costo_cibo = 2  
@@ -413,8 +536,8 @@ def fase_mercato_nero(stato):
     stampa_risorse(stato)
     
     try:
-        cibo_acquistato = int(input(colored(f"🥩 Unità di cibo ({costo_cibo}🪙/u): ", "yellow", attrs=["bold"])))
-        acqua_acquistata = int(input(colored(f"💧 Unità di acqua ({costo_acqua}🪙/u): ", "cyan", attrs=["bold"])))
+        cibo_acquistato = int(leggi_input(colored(f"🥩 Unità di cibo ({costo_cibo}🪙/u): ", "yellow", attrs=["bold"])))
+        acqua_acquistata = int(leggi_input(colored(f"💧 Unità di acqua ({costo_acqua}🪙/u): ", "cyan", attrs=["bold"])))
     except ValueError:
         cprint("❌ Il mercante ti inganna. Ottieni scorte minime.", "red")
         cibo_acquistato, acqua_acquistata = 10, 10
@@ -432,6 +555,7 @@ def fase_mercato_nero(stato):
         stato['budget'] -= costo_totale
         
     cprint(f"\n✅ Stive chiuse. Parti con {stato['cibo']}🥩, {stato['acqua']}💧 e {stato['budget']}🪙 restanti.", "green", attrs=["bold"])
+    return True
 
 def consuma_scorte(stato):
     consumo_cibo = sum(stato['equipaggio'].values()) * 1  
@@ -444,7 +568,7 @@ def consuma_scorte(stato):
         return False
     return True
 
-def viaggio_andata(stato):
+def viaggio_andata(stato, capitano):
     print("\n")
     cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
     stampa_lenta(" IL MARE APERTO! L'ancora viene strappata dal fango.", "cyan", ["bold"])
@@ -461,12 +585,13 @@ def viaggio_andata(stato):
         else:
             stampa_lenta("🌅 L'orizzonte è una linea infinita. La navigazione procede senza intoppi mortali.", "cyan")
             
-        input(colored("\n📖 [Premi Invio per chiudere il diario di bordo...] ", "dark_grey"))
+        leggi_input(colored("\n📖 [Premi Invio per chiudere il diario di bordo...] ", "dark_grey"))
         
         if not consuma_scorte(stato):
-            game_over("Le botti rimbombano vuote. La porta viene sfondata. L'Ammutinamento è compiuto. Ti sgozzano.")
+            return game_over("Le botti rimbombano vuote. La porta viene sfondata. L'Ammutinamento è compiuto. Ti sgozzano.", stato, capitano)
+    return True
 
-def esplorazione_isola(stato):
+def esplorazione_isola(stato, capitano):
     print("\n")
     cprint("🌴" + "="*58 + "🌴", "green", attrs=["bold"])
     stampa_lenta(" TERRA IN VISTA! Emerge l'Isola del Sole.", "green", ["bold"])
@@ -476,27 +601,24 @@ def esplorazione_isola(stato):
     stampa_lenta("Dietro di loro, immense ceste di spezie traboccano. La ricchezza assoluta.", "yellow", ["bold"])
     
     while True:
-        scelta = input(colored("\n👉 I tamburi battono. [A] Assalta | [C] Contrattare | [F] Furto notturno: ", "magenta", attrs=["bold"])).upper().strip()
+        scelta = leggi_input(colored("\n👉 I tamburi battono. [A] Assalta | [C] Contrattare | [F] Furto notturno: ", "magenta", attrs=["bold"])).upper().strip()
         
         if scelta == 'A':
             stampa_lenta("⚔️ 'UCCIDETELI TUTTI!'", "red", ["bold"])
             forza = random.randint(1, 10) + (stato['equipaggio']["marinai"] * 2)
             if stato['attrezzature']["armi"]: forza += 6
-            
             if forza > 9: 
                 stampa_lenta("💥 I moschetti frantumano le linee. Caricate il sangue e le spezie sulle scialuppe!", "green", ["bold"])
                 stato['spezie'] = True
                 stato['budget'] += 400 
             else:
                 stampa_lenta("💀 Un massacro inimmaginabile. Vi accerchiano e vi frantumano. Fuggite strisciando.", "red", ["bold"])
-                for ruolo in stato['equipaggio']:
-                    stato['equipaggio'][ruolo] //= 2
+                for ruolo in stato['equipaggio']: stato['equipaggio'][ruolo] //= 2
             break
             
         elif scelta == 'C':
             stampa_lenta("🤝 Avanzi sudando freddo, offrendo doni.", "cyan")
             diplomazia = random.randint(1, 10) + (stato['equipaggio']["navigatori"] * 2)
-            
             if diplomazia > 5: 
                 costo_spezie = 200
                 if stato['budget'] >= costo_spezie:
@@ -526,8 +648,9 @@ def esplorazione_isola(stato):
             break
         else:
             cprint("❌ Il tempo scorre! Inserisci un'opzione valida.", "red")
+    return True
 
-def viaggio_ritorno(stato):
+def viaggio_ritorno(stato, capitano):
     print("\n")
     cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
     stampa_lenta(" IL RITORNO. L'Oceano ha ancora fame.", "cyan", ["bold"])
@@ -541,8 +664,7 @@ def viaggio_ritorno(stato):
         
         if settimana == 5 and stato['spezie']:
             stampa_lenta("\n🏴‍☠️ Un boato! Vele nere e cannoni d'ottone. I Pirati della Fratellanza Oscura vi braccano!", "red", ["bold", "blink"])
-            
-            scelta_pirati = input(colored("👉 [C] Combatti | [M] Manovre Evasive | [P] Paga: ", "magenta", attrs=["bold"])).upper().strip()
+            scelta_pirati = leggi_input(colored("👉 [C] Combatti | [M] Manovre Evasive | [P] Paga: ", "magenta", attrs=["bold"])).upper().strip()
             
             if scelta_pirati == 'C':
                 if stato['equipaggio']["marinai"] > 0 and stato['attrezzature']["armi"]:
@@ -568,12 +690,15 @@ def viaggio_ritorno(stato):
         else:
             stampa_lenta("🌅 Le assi marce gemono. Si va avanti per inerzia, col cuore in gola.", "cyan")
             
-        input(colored("\n📖 [Premi Invio, stringendo i denti...] ", "dark_grey"))
+        leggi_input(colored("\n📖 [Premi Invio, stringendo i denti...] ", "dark_grey"))
         
         if not consuma_scorte(stato):
-            game_over("L'ultimo rivolo d'acqua scende nel fango. La disidratazione trasforma tutti in bestie.")
+            return game_over("L'ultimo rivolo d'acqua scende nel fango. La disidratazione trasforma tutti in bestie.", stato, capitano)
+    return True
 
 def conclusione(capitano, stato):
+    dati = carica_dati()
+    
     print("\n")
     cprint("🔔" + "="*58 + "🔔", "yellow", attrs=["bold"])
     stampa_lenta(f" LE CAMPANE DI SIVIGLIA! Capitano {capitano}, avete ingannato la Mietitrice.", "yellow", ["bold"])
@@ -588,41 +713,215 @@ def conclusione(capitano, stato):
         
     cprint(f"\n📊 BILANCIO FINALE: {stato['budget']}🪙", "cyan", attrs=["bold"])
     
+    esito = ""
     if stato['spezie'] and stato['budget'] > 2000:
+        dati["stats"]["vittorie_epiche"] += 1
+        esito = "Vittoria Epica"
         cprint("\n👑 VITTORIA EPICA (3/3) 👑", "yellow", attrs=["bold", "blink"])
         stampa_lenta("Compri terre aspre, un titolo nobiliare e un'intera flotta mercantile. Sei l'Eroe dell'Oceano.", "green")
     elif stato['spezie']:
+        dati["stats"]["vittorie_pirro"] += 1
+        esito = "Vittoria di Pirro"
         cprint("\n⚖️ VITTORIA DI PIRRO (2/3) ⚖️", "cyan", attrs=["bold"])
         stampa_lenta("Le vendite placano i debitori. Sei libero dalle catene, ma i tuoi forzieri sono vuoti.", "yellow")
     else:
+        dati["stats"]["rovine"] += 1
+        esito = "Rovina Totale"
         cprint("\n💀 ROVINA TOTALE (1/3) 💀", "red", attrs=["bold"])
         stampa_lenta("Il viaggio è stato un collasso. Le Guardie Reali ti incatenano. La prigione si chiude per sempre.", "red")
-    print()
+        
+    salva_dati(dati)
+    archivia_partita(capitano, stato, esito)
+    input(colored("\n📖 [Premi Invio per tornare al Menù Principale] ", "dark_grey"))
 
 # ==========================================
-# GIOCO PRINCIPALE (MAIN)
+# MOTORE DI GIOCO E MENU
 # ==========================================
 
-def inizia_gioco():
-    stato_partita = {
-        "budget": 2000,
-        "cibo": 0,
-        "acqua": 0,
-        "spezie": False,
-        "equipaggio": {"marinai": 0, "carpentieri": 0, "cuochi": 0, "medici": 0, "navigatori": 0},
-        "attrezzature": {"armi": False, "attrezzi_carpentiere": False, "kit_medico": False, "strumenti_navigazione": False}
-    }
+def esegui_partita(nuova=True, dati_salvati=None):
+    capitano = "Sconosciuto"
+    stato_partita = {}
     
-    capitano = introduzione()
-    fase_arruolamento(stato_partita)
-    fase_arsenale(stato_partita)
-    fase_mercato_nero(stato_partita)
-    
-    viaggio_andata(stato_partita)
-    esplorazione_isola(stato_partita)
-    viaggio_ritorno(stato_partita)
-    
-    conclusione(capitano, stato_partita)
+    try:
+        if nuova:
+            stato_partita = {
+                "fase": "inizio",
+                "budget": 2000,
+                "cibo": 0,
+                "acqua": 0,
+                "spezie": False,
+                "equipaggio": {"marinai": 0, "carpentieri": 0, "cuochi": 0, "medici": 0, "navigatori": 0},
+                "attrezzature": {"armi": False, "attrezzi_carpentiere": False, "kit_medico": False, "strumenti_navigazione": False}
+            }
+            capitano = introduzione()
+        else:
+            stato_partita = dati_salvati["stato"]
+            capitano = dati_salvati["capitano"]
+            cprint(f"\n⚓ Bentornato a bordo, Capitano {capitano}!", "green", attrs=["bold"])
+            time.sleep(1)
+
+        # Avanzamento Fasi
+        if stato_partita["fase"] == "inizio":
+            stato_partita["fase"] = "arruolamento"
+            
+        if stato_partita["fase"] == "arruolamento":
+            if not fase_arruolamento(stato_partita, capitano): return
+            stato_partita["fase"] = "arsenale"
+
+        if stato_partita["fase"] == "arsenale":
+            if not fase_arsenale(stato_partita): return
+            stato_partita["fase"] = "mercato"
+
+        if stato_partita["fase"] == "mercato":
+            if not fase_mercato_nero(stato_partita): return
+            stato_partita["fase"] = "andata"
+
+        if stato_partita["fase"] == "andata":
+            if not viaggio_andata(stato_partita, capitano): return
+            stato_partita["fase"] = "isola"
+
+        if stato_partita["fase"] == "isola":
+            if not esplorazione_isola(stato_partita, capitano): return
+            stato_partita["fase"] = "ritorno"
+
+        if stato_partita["fase"] == "ritorno":
+            if not viaggio_ritorno(stato_partita, capitano): return
+            conclusione(capitano, stato_partita)
+
+    except InterruptedError:
+        cprint("\n\n⏸️  GIOCO IN PAUSA (Tasto ESC intercettato)", "yellow", attrs=["bold"])
+        # Usa l'input standard qui perché il gameplay è temporaneamente in pausa e vogliamo leggere normalmente
+        nome = input(colored("👉 Inserisci il nome del salvataggio: ", "cyan")).strip()
+        if not nome:
+            nome = f"Salvataggio_di_{capitano}_{random.randint(100,999)}"
+        
+        dati = carica_dati()
+        stato_partita["esito"] = "In corso"
+        dati["salvataggi"][nome] = {
+            "capitano": capitano,
+            "stato": stato_partita
+        }
+        salva_dati(dati)
+        
+        cprint(f"\n✅ Partita salvata come '{nome}'! Ritorno al menù...", "green", attrs=["bold"])
+        time.sleep(2)
+        return
+
+def menu_principale():
+    while True:
+        dati = carica_dati()
+        
+        print("\n" * 2)
+        cprint("="*60, "cyan", attrs=["bold"])
+        cprint("  ☠️   LA MALEDIZIONE D'ORO - MENU PRINCIPALE   ☠️  ", "yellow", "on_grey", attrs=["bold"])
+        cprint("="*60, "cyan", attrs=["bold"])
+        
+        print(colored("1.", "magenta", attrs=["bold"]) + " 🏴‍☠️ Nuova Partita")
+        
+        salvataggi_in_corso = {k: v for k, v in dati["salvataggi"].items() if v["stato"].get("esito") == "In corso"}
+        
+        if salvataggi_in_corso:
+            print(colored("2.", "magenta", attrs=["bold"]) + " ⚓ Continua Partita")
+        else:
+            print(colored("2. ⚓ Continua Partita (Nessun salvataggio in corso disponibile)", "dark_grey"))
+            
+        print(colored("3.", "magenta", attrs=["bold"]) + " 📊 Statistiche Globali")
+        print(colored("4.", "magenta", attrs=["bold"]) + " 🔍 Cerca ed Esplora Archivi Partita")
+        print(colored("0.", "magenta", attrs=["bold"]) + " 🚪 Esci dal Gioco")
+        
+        scelta = input(colored("\n👉 Scegli un'opzione: ", "magenta", attrs=["bold"])).strip()
+        
+        if scelta == "1":
+            esegui_partita(nuova=True)
+            
+        elif scelta == "2":
+            if not salvataggi_in_corso:
+                cprint("\n❌ Inizia prima una nuova avventura!", "red")
+                time.sleep(1.5)
+            else:
+                print("\n⚓ Salvataggi in corso disponibili:")
+                nomi_salvataggi = list(salvataggi_in_corso.keys())
+                for i, nome in enumerate(nomi_salvataggi, 1):
+                    print(f"   {i}. {nome} (Capitano: {salvataggi_in_corso[nome]['capitano']}, Fase: {salvataggi_in_corso[nome]['stato']['fase']})")
+                
+                scelta_salv = input("\n👉 Inserisci il nome (o numero) del salvataggio da caricare: ").strip()
+                da_caricare = None
+                
+                if scelta_salv.isdigit() and 1 <= int(scelta_salv) <= len(nomi_salvataggi):
+                    da_caricare = nomi_salvataggi[int(scelta_salv) - 1]
+                elif scelta_salv in salvataggi_in_corso:
+                    da_caricare = scelta_salv
+                    
+                if da_caricare:
+                    esegui_partita(nuova=False, dati_salvati=salvataggi_in_corso[da_caricare])
+                else:
+                    cprint("❌ Salvataggio non trovato.", "red")
+                    time.sleep(1.5)
+                    
+        elif scelta == "3":
+            mostra_statistiche_globali(dati)
+            
+        elif scelta == "4":
+            print("\n🔍 --- CERCA ARCHIVIO PARTITA ---")
+            
+            if not dati["salvataggi"]:
+                cprint("❌ Nessuna partita presente negli archivi.", "red")
+                time.sleep(1.5)
+                continue
+                
+            print("Archivi disponibili:")
+            nomi_archivi = list(dati["salvataggi"].keys())
+            for i, nome in enumerate(nomi_archivi, 1):
+                esito_partita = dati["salvataggi"][nome]["stato"].get("esito", "Sconosciuto")
+                print(f"   {i}. {nome} [{esito_partita}]")
+                
+            ricerca = input(colored("\n👉 Inserisci il nome esatto o il numero della partita da cercare: ", "cyan")).strip()
+            
+            da_cercare = None
+            if ricerca.isdigit() and 1 <= int(ricerca) <= len(nomi_archivi):
+                da_cercare = nomi_archivi[int(ricerca) - 1]
+            elif ricerca in dati["salvataggi"]:
+                da_cercare = ricerca
+                
+            if da_cercare:
+                s = dati["salvataggi"][da_cercare]
+                stato_p = s['stato']
+                
+                cprint(f"\n📜 DETTAGLI COMPLETI PARTITA: {da_cercare}", "yellow", attrs=["bold"])
+                print(f"🏴‍☠️  Capitano:        {s['capitano']}")
+                print(f"📌  Stato Attuale:   {stato_p.get('esito', 'Sconosciuto')}")
+                print(f"🗺️  Fase Raggiunta:  {stato_p.get('fase', 'Sconosciuta').capitalize()}")
+                
+                cprint("\n💰  --- RISORSE ---", "green")
+                print(f"🪙  Budget: {stato_p.get('budget', 0)}")
+                print(f"🥩  Cibo:   {stato_p.get('cibo', 0)}")
+                print(f"💧  Acqua:  {stato_p.get('acqua', 0)}")
+                print(f"🌿  Spezie: {'Presenti ✅' if stato_p.get('spezie') else 'Assenti ❌'}")
+                
+                cprint("\n👥  --- EQUIPAGGIO ---", "cyan")
+                equipaggio_totale = sum(stato_p.get('equipaggio', {}).values())
+                print(f"Totale uomini a bordo: {equipaggio_totale}/16")
+                for ruolo, quantita in stato_p.get('equipaggio', {}).items():
+                    print(f"   - {ruolo.capitalize()}: {quantita}")
+                    
+                cprint("\n📦  --- ATTREZZATURE ---", "magenta")
+                for attrezzo, posseduto in stato_p.get('attrezzature', {}).items():
+                    simbolo = '✅' if posseduto else '❌'
+                    nome_pulito = attrezzo.replace('_', ' ').capitalize()
+                    print(f"   - {nome_pulito}: {simbolo}")
+                
+                input(colored("\n📖 [Premi Invio per tornare al Menù] ", "dark_grey"))
+            else:
+                cprint("\n❌ Nessuna partita trovata con questo nome o numero negli archivi.", "red")
+                time.sleep(1.5)
+                
+        elif scelta == "0":
+            cprint("\n🌊 Possa l'oceano esserti lieve. Addio, Capitano.", "cyan")
+            sys.exit()
+            
+        else:
+            cprint("\n❌ Scelta non valida.", "red")
+            time.sleep(1)
 
 if __name__ == "__main__":
-    inizia_gioco()
+    menu_principale()
