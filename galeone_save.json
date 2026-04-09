@@ -1,18 +1,18 @@
 {
     "stats": {
-        "morti": 0,
+        "morti": 1,
         "vittorie_epiche": 0,
         "vittorie_pirro": 0,
         "rovine": 0
     },
     "salvataggi": {
-        "prova 1 !": {
-            "capitano": "Senza Nome",
+        "porva2": {
+            "capitano": "Prova2",
             "stato": {
                 "fase": "andata",
                 "budget": 1170,
-                "cibo": 10,
-                "acqua": 10,
+                "cibo": -6,
+                "acqua": -22,
                 "spezie": false,
                 "equipaggio": {
                     "marinai": 4,
@@ -26,6 +26,30 @@
                     "attrezzi_carpentiere": false,
                     "kit_medico": false,
                     "strumenti_navigazione": false
+                },
+                "esito": "Morto in mare"
+            }
+        },
+        "prova2": {
+            "capitano": "Leo",
+            "stato": {
+                "fase": "andata",
+                "budget": 0,
+                "cibo": 134,
+                "acqua": 268,
+                "spezie": false,
+                "equipaggio": {
+                    "marinai": 3,
+                    "carpentieri": 4,
+                    "cuochi": 3,
+                    "medici": 3,
+                    "navigatori": 3
+                },
+                "attrezzature": {
+                    "armi": true,
+                    "attrezzi_carpentiere": true,
+                    "kit_medico": true,
+                    "strumenti_navigazione": true
                 },
                 "esito": "In corso"
             }

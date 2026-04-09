@@ -16,10 +16,12 @@ except ImportError:
 # GESTIONE DATI E SALVATAGGI
 # ==========================================
 
-FILE_SALVATAGGIO = "galeone_save.json"
+# Definisco il percorso assoluto basato sulla posizione dello script
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_SALVATAGGIO = os.path.join(BASE_DIR, "galeone_save.json")
 
 def carica_dati():
-    """Carica i dati dal file JSON e inizializza la struttura base."""
+    """Carica i dati dal file JSON con gestione percorsi e corruzione file."""
     dati_base = {
         "stats": {
             "morti": 0,
@@ -32,17 +34,29 @@ def carica_dati():
     
     if os.path.exists(FILE_SALVATAGGIO):
         try:
-            with open(FILE_SALVATAGGIO, "r") as f:
+            with open(FILE_SALVATAGGIO, "r", encoding="utf-8") as f:
                 dati_letti = json.load(f)
                 
+                # Aggiorno i dizionari per non perdere eventuali chiavi nuove in versioni future
                 if "stats" in dati_letti:
-                    dati_base["stats"] = dati_letti["stats"]
+                    dati_base["stats"].update(dati_letti["stats"])
                 if "salvataggi" in dati_letti:
                     dati_base["salvataggi"].update(dati_letti["salvataggi"])
-        except Exception:
-            pass
+                    
+        except json.JSONDecodeError:
+            cprint("\n⚠️  ATTENZIONE: Il file di salvataggio è corrotto! Verranno usati dati vuoti.", "red", attrs=["bold"])
+        except Exception as e:
+            cprint(f"\n⚠️  Errore imprevisto nel caricamento: {e}", "red")
             
     return dati_base
+
+def salva_dati(dati):
+    """Salva il dizionario dati nel file JSON con encoding UTF-8."""
+    try:
+        with open(FILE_SALVATAGGIO, "w", encoding="utf-8") as f:
+            json.dump(dati, f, indent=4)
+    except Exception as e:
+        cprint(f"❌ Errore durante il salvataggio: {e}", "red")
 
 def salva_dati(dati):
     """Salva il dizionario dati nel file JSON."""
@@ -141,7 +155,7 @@ def leggi_input(prompt_testo):
                 sys.stdout.write(c)
                 sys.stdout.flush()
 
-def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
+def stampa_lenta(testo, colore=None, attrs=None, ritardo=0.03):
     salta_animazione = False
     
     if is_windows:
@@ -161,7 +175,8 @@ def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
                     sys.stdin.readline()
                     salta_animazione = True
         
-        char_da_stampare = colored(carattere, colore, attrs=attributi) if colore else carattere
+        # Qui ora usiamo 'attrs' che arriva direttamente dagli argomenti della funzione
+        char_da_stampare = colored(carattere, colore, attrs=attrs) if colore else carattere
         sys.stdout.write(char_da_stampare)
         sys.stdout.flush()
         
@@ -169,7 +184,6 @@ def stampa_lenta(testo, colore=None, attributi=None, ritardo=0.03):
             time.sleep(ritardo)
             
     print()
-
 def game_over(messaggio, stato, capitano):
     """Gestisce la fine prematura del gioco, aggiorna le stats e archivia la run."""
     dati = carica_dati()
