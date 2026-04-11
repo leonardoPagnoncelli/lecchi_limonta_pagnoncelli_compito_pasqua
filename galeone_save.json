@@ -1,6 +1,6 @@
 {
     "stats": {
-        "morti": 1,
+        "morti": 2,
         "vittorie_epiche": 0,
         "vittorie_pirro": 0,
         "rovine": 0
@@ -52,6 +52,33 @@
                     "strumenti_navigazione": true
                 },
                 "esito": "In corso"
+            }
+        },
+        "prova del 11_04_26": {
+            "capitano": "Proviamo",
+            "stato": {
+                "fase": "andata",
+                "budget": 0,
+                "cibo": 43,
+                "acqua": -69,
+                "legno": 30,
+                "morale": 10,
+                "integrita": 100,
+                "spezie": false,
+                "equipaggio": {
+                    "marinai": 4,
+                    "carpentieri": 3,
+                    "cuochi": 3,
+                    "medici": 3,
+                    "navigatori": 3
+                },
+                "attrezzature": {
+                    "armi": true,
+                    "attrezzi_carpentiere": true,
+                    "kit_medico": true,
+                    "strumenti_navigazione": true
+                },
+                "esito": "Morto in mare"
             }
         }
     }

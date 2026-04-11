@@ -493,22 +493,15 @@ def introduzione():
     capitano = leggi_input(colored("\n🏴‍☠️  Capitano, qual è il tuo nome? ", "yellow", attrs=["bold"])).strip().capitalize()
     if not capitano: capitano = "Senza Nome"
     
-    print()
-    cprint("Scegli il tuo destino:", "yellow", attrs=["bold"])
-    print("1. 🟢 Mozzo     (Facile: Budget 3000🪙)")
-    print("2. 🟡 Capitano  (Normale: Budget 2000🪙)")
-    print("3. 🔴 Leggenda  (Difficile: Budget 1000🪙)")
-    difficolta = chiedi_scelta(colored("👉 Seleziona la Difficoltà (1-3): ", "magenta"), ['1', '2', '3'])
-    
-    budget = 3000 if difficolta == '1' else 1000 if difficolta == '3' else 2000
-    
     stampa_lenta(f"\nChe Dio abbia pietà della tua anima, Capitano {capitano}.", "red", ["bold"])
     time.sleep(1)
-    return capitano, budget
+    
+    # Restituisce il nome del capitano e fissa il budget sempre a 2000
+    return capitano, 2000
 
 def fase_arruolamento(stato, capitano):
     pulisci_schermo()
-    costo_membro = 50
+    costo_membro = 25  # 📉 Prezzo dimezzato (prima era 50)
     cprint("="*60, "green", attrs=["bold"])
     stampa_lenta("Entri in una bettola fumosa. Facce sfregiate ti fissano. È ora di formare la ciurma.", "cyan")
     
@@ -581,9 +574,9 @@ def fase_arsenale(stato):
 
 def fase_mercato_nero(stato):
     pulisci_schermo()
-    costo_cibo = 2  
-    costo_acqua = 1 
-    costo_legno = 5
+    costo_cibo = 1   
+    costo_acqua = 1  
+    costo_legno = 2  
     
     cprint("="*60, "green", attrs=["bold"])
     cprint("🐀 --- IL MERCATO NERO (SCORTE) ---", "green", attrs=["bold"])
@@ -605,7 +598,8 @@ def fase_mercato_nero(stato):
         stampa_lenta("🔪 I mercanti sfoderano i coltelli. Non hai l'oro! Caricano solo ciò che puoi permetterti in egual misura.", "red", ["bold"])
         stato['cibo'] = stato['budget'] // 4
         stato['acqua'] = stato['budget'] // 4
-        stato['legno'] = (stato['budget'] // 4) // costo_legno
+        # Evito la divisione per zero se il budget è bassissimo
+        stato['legno'] = (stato['budget'] // 4) // costo_legno if costo_legno > 0 else 0
         stato['budget'] = 0
     else:
         stato['cibo'] = cibo_acquistato
