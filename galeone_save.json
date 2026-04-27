@@ -1,6 +1,6 @@
 {
     "stats": {
-        "morti": 2,
+        "morti": 3,
         "vittorie_epiche": 0,
         "vittorie_pirro": 0,
         "rovine": 0
@@ -79,6 +79,87 @@
                     "strumenti_navigazione": true
                 },
                 "esito": "Morto in mare"
+            }
+        },
+        "Cronaca_di_Pd_5005": {
+            "capitano": "Pd",
+            "stato": {
+                "fase": "ritorno",
+                "budget": 900,
+                "cibo": 25,
+                "acqua": -57,
+                "legno": 47,
+                "morale": 10,
+                "integrita": 75,
+                "spezie": true,
+                "equipaggio": {
+                    "marinai": 5,
+                    "carpentieri": 2,
+                    "cuochi": 2,
+                    "medici": 2,
+                    "navigatori": 1
+                },
+                "attrezzature": {
+                    "armi": true,
+                    "attrezzi_carpentiere": true,
+                    "kit_medico": true,
+                    "strumenti_navigazione": true
+                },
+                "esito": "Morto in mare"
+            }
+        },
+        "porva dimostrativa a pd": {
+            "capitano": "Ouob",
+            "stato": {
+                "fase": "arruolamento",
+                "budget": 2000,
+                "cibo": 0,
+                "acqua": 0,
+                "legno": 0,
+                "morale": 100,
+                "integrita": 100,
+                "spezie": false,
+                "equipaggio": {
+                    "marinai": 0,
+                    "carpentieri": 0,
+                    "cuochi": 0,
+                    "medici": 0,
+                    "navigatori": 0
+                },
+                "attrezzature": {
+                    "armi": false,
+                    "attrezzi_carpentiere": false,
+                    "kit_medico": false,
+                    "strumenti_navigazione": false
+                },
+                "esito": "In corso"
+            }
+        },
+        "prova87234vg g": {
+            "capitano": "Leo",
+            "stato": {
+                "fase": "arruolamento",
+                "budget": 2000,
+                "cibo": 0,
+                "acqua": 0,
+                "legno": 0,
+                "morale": 100,
+                "integrita": 100,
+                "spezie": false,
+                "equipaggio": {
+                    "marinai": 0,
+                    "carpentieri": 0,
+                    "cuochi": 0,
+                    "medici": 0,
+                    "navigatori": 0
+                },
+                "attrezzature": {
+                    "armi": false,
+                    "attrezzi_carpentiere": false,
+                    "kit_medico": false,
+                    "strumenti_navigazione": false
+                },
+                "esito": "In corso"
             }
         }
     }
