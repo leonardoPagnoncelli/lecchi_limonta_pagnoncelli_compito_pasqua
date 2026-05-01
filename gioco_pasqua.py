@@ -190,7 +190,6 @@ COSTI_RUOLO = {
     "navigatori": 20
 }
 
-# Nomi ruolo singolari per la stampa
 NOMI_RUOLO = {
     "cuochi": "Cuoco",
     "marinai": "Marinaio",
@@ -201,13 +200,16 @@ NOMI_RUOLO = {
 
 def stampa_risorse(stato):
     ciurma_totale = sum(stato['equipaggio'].values())
-    cprint(f"👥 Ciurma: {ciurma_totale} | 🪙 Budget: {stato['budget']} | 🥬 Verdura: {stato['scorte']['verdura']:.1f}kg | 🍊 Frutta: {stato['scorte']['frutta']:.1f}kg | 🥩 Carne: {stato['scorte']['carne']:.1f}kg | 💧 Acqua: {stato['scorte']['acqua']:.1f}brl", "cyan", attrs=["bold"])
-    cprint(f"🛡️ Integrità: {stato.get('integrita', 100)}% | 🪝 Punti Ammutinamento: {stato.get('punti_ammutinamento', 0)}", "magenta", attrs=["bold"])
-    # Stampa morale medio
+    cprint(f"👥 Ciurma: {ciurma_totale} | 🪙 Budget: {stato['budget']:.0f} | 🥬 Verdura: {stato['scorte']['verdura']:.1f}kg | 🍊 Frutta: {stato['scorte']['frutta']:.1f}kg | 🥩 Carne: {stato['scorte']['carne']:.1f}kg | 💧 Acqua: {stato['scorte']['acqua']:.1f}brl", "cyan", attrs=["bold"])
+    cprint(f"🛡️ Integrità: {stato.get('integrita', 100)}% | ⚠️ Punti Ammutinamento: {stato.get('punti_ammutinamento', 0)}", "magenta", attrs=["bold"])
     morali = list(stato.get('morale_individuale', {}).values())
     if morali:
         media_morale = sum(morali) / len(morali)
-        cprint(f"❤️ Morale medio equipaggio: {media_morale:.0f}/100", "yellow", attrs=["bold"])
+        colore_morale = "green" if media_morale > 60 else ("yellow" if media_morale > 30 else "red")
+        cprint(f"❤️  Morale medio equipaggio: {media_morale:.0f}/100", colore_morale, attrs=["bold"])
+    sett_percorse = stato.get('settimane_percorse', 0)
+    if sett_percorse > 0:
+        cprint(f"🗓️  Settimane percorse: {sett_percorse}", "dark_grey")
 
 def aggiungi_membro(stato, ruolo, nome=None):
     """Aggiunge un membro con morale individuale."""
@@ -219,21 +221,21 @@ def aggiungi_membro(stato, ruolo, nome=None):
     return nome
 
 def rimuovi_membro(stato, ruolo):
-    """Rimuove un membro casuale del ruolo dato (TODO-11: morte a morale 0)."""
+    """Rimuove il membro con morale più bassa del ruolo dato."""
     if stato['equipaggio'].get(ruolo, 0) > 0:
         stato['equipaggio'][ruolo] -= 1
-        # Rimuovi il membro con morale più bassa del ruolo
         chiavi_ruolo = [k for k in stato['morale_individuale'] if k.startswith(NOMI_RUOLO.get(ruolo, ruolo))]
         if chiavi_ruolo:
             vittima = min(chiavi_ruolo, key=lambda k: stato['morale_individuale'][k])
             del stato['morale_individuale'][vittima]
+            return vittima
+    return None
 
 def controlla_morti_morale_zero(stato):
     """TODO-11: morte automatica membri con morale = 0."""
     morti = [k for k, v in list(stato['morale_individuale'].items()) if v <= 0]
     for morto in morti:
         del stato['morale_individuale'][morto]
-        # Rimuovi dal conteggio equipaggio
         for ruolo, nome_singolo in NOMI_RUOLO.items():
             if morto.startswith(nome_singolo):
                 stato['equipaggio'][ruolo] = max(0, stato['equipaggio'].get(ruolo, 0) - 1)
@@ -261,26 +263,35 @@ def equipaggio_basso_morale(stato, soglia=30):
     return bassi > len(morali) / 2
 
 def aggiungi_punti_ammutinamento(stato, punti, motivo=""):
+    """TODO-13: aggiunge punti ammutinamento con log."""
     stato['punti_ammutinamento'] = stato.get('punti_ammutinamento', 0) + punti
     if motivo:
-        variazione_stat(f"⚠️ +{punti} punti ammutinamento ({motivo})", "red")
+        variazione_stat(f"⚠️  +{punti} punti ammutinamento ({motivo})", "red")
+
+# ==========================================
+# TRACCIAMENTO SETTIMANE REALI (fix TODO-44/47)
+# ==========================================
+
+def incrementa_settimane(stato, n=1):
+    """Incrementa le settimane realmente percorse per il calcolo stipendi."""
+    stato['settimane_percorse'] = stato.get('settimane_percorse', 0) + n
 
 # ==========================================
 # SISTEMA SCORTE E CONSUMI
 # ==========================================
 
 COSTI_SCORTE = {
-    "verdura": 0.5,   # per kg
-    "frutta": 1.0,    # per kg
-    "carne": 2.0,     # per kg
-    "acqua": 0.5      # per barile
+    "verdura": 0.5,
+    "frutta": 1.0,
+    "carne": 2.0,
+    "acqua": 0.5
 }
 
 CONSUMI_SETTIMANALI_PER_MEMBRO = {
-    "verdura": 0.5,   # kg
-    "frutta": 1.0,    # kg
-    "carne": 1.0,     # kg
-    "acqua": 0.5      # barili
+    "verdura": 0.5,
+    "frutta": 1.0,
+    "carne": 1.0,
+    "acqua": 0.5
 }
 
 def consuma_scorte_dettagliate(stato, moltiplicatore=1.0):
@@ -296,10 +307,9 @@ def consuma_scorte_dettagliate(stato, moltiplicatore=1.0):
 
     if esaurite:
         for cat in esaurite:
-            # TODO-10: -10 morale per esaurimento scorte
             varia_morale_tutti(stato, -10, f"scorte {cat} esaurite")
+            # TODO-13: punti ammutinamento per ogni categoria esaurita
             aggiungi_punti_ammutinamento(stato, 15, f"scorte {cat} esaurite")
-        return "scorte_esaurite"
 
     if stato.get('punti_ammutinamento', 0) >= 100:
         return "ammutinamento"
@@ -307,10 +317,13 @@ def consuma_scorte_dettagliate(stato, moltiplicatore=1.0):
     if stato.get('integrita', 100) <= 0:
         return "affondato"
 
+    if esaurite:
+        return "scorte_esaurite"
+
     return "ok"
 
 # ==========================================
-# EVENTI CASUALI (TODO-15 a TODO-31)
+# EVENTI CASUALI
 # ==========================================
 
 def evento_uomo_in_mare(stato):
@@ -319,9 +332,10 @@ def evento_uomo_in_mare(stato):
     ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
     if ruoli_vivi:
         ruolo = random.choice(ruoli_vivi)
-        rimuovi_membro(stato, ruolo)
+        vittima = rimuovi_membro(stato, ruolo)
         varia_morale_tutti(stato, -15, "collega caduto in mare")
-        variazione_stat(f"💀 Hai perso 1 {NOMI_RUOLO.get(ruolo, ruolo)}!", "red")
+        variazione_stat(f"💀 Hai perso {vittima or '1 membro'}!", "red")
+        aggiungi_punti_ammutinamento(stato, 10, "morte in mare")
     else:
         stampa_lenta("Miracolosamente, nessuno cade.", "green")
 
@@ -349,17 +363,17 @@ def evento_tempesta_miracolosa(stato):
     stampa_lenta("⛈️ Una tempesta provvidenziale! La pioggia riempie ogni contenitore e lava i malati.", "cyan", attrs=["bold"])
     acqua_guadagnata = random.uniform(10, 25)
     stato['scorte']['acqua'] += acqua_guadagnata
-    # Guarisce: aumenta morale di tutti
     varia_morale_tutti(stato, +15, "tempesta miracolosa")
     variazione_stat(f"📈 +{acqua_guadagnata:.1f} 💧 Acqua", "green")
 
 def evento_venti_favorevoli(stato):
-    """TODO-20: accorcia viaggio di 1 sett, +morale."""
+    """TODO-20: accorcia viaggio di 1 sett, +morale +5 o +15."""
     stampa_lenta("💨 VENTI FAVOREVOLI! Le vele si gonfiano al massimo. Avanzate di settimane in giorni!", "green", attrs=["bold"])
     stato['settimane_risparmiate'] = stato.get('settimane_risparmiate', 0) + 1
+    # TODO-10: +5 o +15 in base alla fortuna
     bonus = random.choice([5, 15])
-    varia_morale_tutti(stato, bonus, "venti favorevoli")
-    variazione_stat(f"📈 Viaggio accorciato di 1 settimana!", "green")
+    varia_morale_tutti(stato, bonus, f"venti favorevoli (+{bonus})")
+    variazione_stat("📈 Viaggio accorciato di 1 settimana!", "green")
 
 def evento_cattivo_tempo(stato):
     """TODO-21: consuma doppio viveri."""
@@ -373,11 +387,12 @@ def evento_cattivo_tempo(stato):
 def evento_ondata(stato):
     """TODO-22: danni nave, perde scorte."""
     stampa_lenta("🌊 UN'ONDATA GIGANTESCA colpisce la fiancata! Tutto vola.", "red", attrs=["bold"])
-    stato['integrita'] = max(0, stato.get('integrita', 100) - random.randint(15, 30))
+    danno = random.randint(15, 30)
+    stato['integrita'] = max(0, stato.get('integrita', 100) - danno)
     cat = random.choice(["verdura", "frutta", "carne"])
     perso = random.uniform(3, 10)
     stato['scorte'][cat] = max(0, stato['scorte'][cat] - perso)
-    variazione_stat(f"📉 Integrità -{30}% | -{perso:.1f} {cat}", "red")
+    variazione_stat(f"📉 Integrità -{danno}% | -{perso:.1f} {cat}", "red")
     varia_morale_tutti(stato, -8, "ondata devastante")
 
 def evento_infestazione_ratti(stato):
@@ -401,13 +416,16 @@ def evento_albatro(stato):
     if scelta == 'S':
         stampa_lenta("💥 BANG! L'albatro cade in mare tra grida di orrore dell'equipaggio!", "red", attrs=["bold"])
         stato['albatro_ucciso'] = True
+        # TODO-34: +30 punti ammutinamento, -20 morale
         aggiungi_punti_ammutinamento(stato, 30, "albatro ucciso - presagio di sventura")
         varia_morale_tutti(stato, -20, "albatro ucciso - maledizione")
-        variazione_stat("☠️ La maledizione dell'albatro si abbatte sulla nave!", "red")
+        variazione_stat("☠️  La maledizione dell'albatro si abbatte sulla nave!", "red")
+        # Blocca futuri avvistamenti impostando a 3
+        stato['avvistamenti_albatro'] = 3
     else:
         stampa_lenta("🕊️ L'albatro continua il suo volo. L'equipaggio tira un sospiro di sollievo.", "green")
         if n_avvistamento == 3:
-            # TODO-35: effetto benigno finale
+            # TODO-35: effetto benigno alla fine (3° avvistamento lasciato vivere)
             stampa_lenta("✨ L'albatro vi ha scortati per tutto il viaggio! La fortuna è con voi!", "yellow", attrs=["bold"])
             stato['albatro_benevolo'] = True
             varia_morale_tutti(stato, +10, "albatro benevolo - protezione divina")
@@ -419,17 +437,18 @@ def evento_scialuppa(stato):
 
     if scelta == 'R':
         stampa_lenta("🤝 I naufraghi salgono a bordo, pronti a lavorare senza paga pur di sopravvivere.", "green")
-        # 4 marinai non pagati
         for i in range(4):
-            nome = f"Naufrago_{i+1}"
+            nome = f"Naufrago_{stato.get('naufraghi_tot', 0) + i + 1}"
             stato['equipaggio']['marinai'] = stato['equipaggio'].get('marinai', 0) + 1
             stato['morale_individuale'][nome] = 70
+        stato['naufraghi_tot'] = stato.get('naufraghi_tot', 0) + 4
+        # I naufraghi NON generano debito (non pagati)
         variazione_stat("📈 +4 Marinai naufraghi (senza costo)", "green")
-        # Ma consumano scorte
         varia_morale_tutti(stato, -3, "bocche in più da sfamare")
     else:
         stampa_lenta("😔 Li lasciate al loro destino. L'equipaggio mormora.", "yellow")
         varia_morale_tutti(stato, -8, "naufraghi abbandonati")
+        aggiungi_punti_ammutinamento(stato, 10, "abbandono naufraghi")
 
 def evento_epidemia(stato):
     """TODO-26: logica medico/bottiglie medicinale."""
@@ -449,12 +468,14 @@ def evento_epidemia(stato):
         if ruoli_vivi:
             rimuovi_membro(stato, random.choice(ruoli_vivi))
         varia_morale_tutti(stato, -10, "epidemia parzialmente curata")
+        aggiungi_punti_ammutinamento(stato, 10, "epidemia con vittime")
     else:
         stampa_lenta("💀 Senza medico né medicine, l'epidemia fa strage!", "red", attrs=["bold"])
         ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
         for _ in range(min(3, conta_equipaggio(stato))):
             if ruoli_vivi:
                 rimuovi_membro(stato, random.choice(ruoli_vivi))
+                ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
         aggiungi_punti_ammutinamento(stato, 20, "epidemia senza cure")
         varia_morale_tutti(stato, -25, "epidemia devastante")
 
@@ -469,7 +490,7 @@ def evento_attacco_pirata(stato):
     if scelta == 'C':
         forza = n_marinai * 2 + n_armi * 3
         if forza >= 10:
-            stampa_lenta("⚔️ Resistenza eroica! I pirati si ritirano con le pive nel sacco!", "green", attrs=["bold"])
+            stampa_lenta("⚔️  Resistenza eroica! I pirati si ritirano con le pive nel sacco!", "green", attrs=["bold"])
             varia_morale_tutti(stato, +10, "vittoria contro i pirati")
         else:
             vittime = max(1, (10 - forza) // 2)
@@ -479,76 +500,118 @@ def evento_attacco_pirata(stato):
                 if ruoli_vivi:
                     ruolo = random.choice(ruoli_vivi)
                     rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
             varia_morale_tutti(stato, -20, "sconfitta contro i pirati")
             stato['integrita'] = max(0, stato.get('integrita', 100) - 20)
+            aggiungi_punti_ammutinamento(stato, 15, "sconfitta pirata")
     elif scelta == 'F':
         if stato['equipaggio'].get('navigatori', 0) > 0:
             stampa_lenta("🧭 Il navigatore trova una rotta di fuga tra gli scogli. Siete salvi!", "green")
+            varia_morale_tutti(stato, +3, "fuga riuscita")
         else:
             stampa_lenta("💥 Senza navigatore non riuscite a fuggire! Vi speronano.", "red")
             stato['integrita'] = max(0, stato.get('integrita', 100) - 30)
             varia_morale_tutti(stato, -15, "fuga fallita dai pirati")
+            aggiungi_punti_ammutinamento(stato, 15, "fuga fallita")
     else:
         if stato['budget'] >= 200:
             stampa_lenta("💰 Gettate il riscatto. I pirati prendono l'oro e se ne vanno.", "yellow")
             stato['budget'] -= 200
+            variazione_stat("📉 -200🪙 riscatto pagato", "red")
         else:
             stampa_lenta("💀 Non avete abbastanza oro! I pirati saccheggiano le stive.", "red")
             for cat in stato['scorte']:
                 stato['scorte'][cat] = stato['scorte'][cat] * 0.5
             aggiungi_punti_ammutinamento(stato, 20, "saccheggio pirata")
+            varia_morale_tutti(stato, -15, "saccheggiati dai pirati")
 
 def evento_danni_timone(stato):
     """TODO-28: se no navigatore danno grave."""
-    stampa_lenta("⚙️ DANNI AL TIMONE! La barra sbanda pericolosamente!", "red", attrs=["bold"])
+    stampa_lenta("⚙️  DANNI AL TIMONE! La barra sbanda pericolosamente!", "red", attrs=["bold"])
 
-    if stato['equipaggio'].get('navigatori', 0) > 0 and stato['equipaggio'].get('meccanici', 0) > 0:
+    ha_nav = stato['equipaggio'].get('navigatori', 0) > 0
+    ha_mec = stato['equipaggio'].get('meccanici', 0) > 0
+
+    if ha_nav and ha_mec:
         stampa_lenta("🔧 Il meccanico e il navigatore riparano il timone in tempo!", "green")
         stato['integrita'] = max(0, stato.get('integrita', 100) - 5)
-    elif stato['equipaggio'].get('meccanici', 0) > 0:
+    elif ha_mec:
         stampa_lenta("🔧 Il meccanico fa una riparazione di fortuna. Si va avanti storto.", "yellow")
         stato['integrita'] = max(0, stato.get('integrita', 100) - 15)
         stato['settimane_extra'] = stato.get('settimane_extra', 0) + 1
+        variazione_stat("📉 +1 settimana extra per danno al timone", "red")
     else:
         stampa_lenta("💥 DANNO GRAVE! Senza navigatore né meccanico, la nave gira in cerchio per giorni!", "red", attrs=["bold"])
         stato['integrita'] = max(0, stato.get('integrita', 100) - 35)
         stato['settimane_extra'] = stato.get('settimane_extra', 0) + 2
         varia_morale_tutti(stato, -20, "danni al timone irrecuperabili")
         aggiungi_punti_ammutinamento(stato, 25, "nave ingovernabile")
+        variazione_stat("📉 +2 settimane extra per danno grave", "red")
 
 def evento_raffiche_vento(stato):
     """TODO-29: danno nave, perdita scorte."""
     stampa_lenta("💨 RAFFICHE DI VENTO VIOLENTE! Le vele si strappano, oggetti volano ovunque!", "red")
-    stato['integrita'] = max(0, stato.get('integrita', 100) - random.randint(10, 25))
+    danno = random.randint(10, 25)
+    stato['integrita'] = max(0, stato.get('integrita', 100) - danno)
     cat_persa = random.choice(["verdura", "frutta", "carne", "acqua"])
     perso = random.uniform(5, 12)
     stato['scorte'][cat_persa] = max(0, stato['scorte'][cat_persa] - perso)
-    variazione_stat(f"📉 -{perso:.1f} {cat_persa} | -Integrità nave", "red")
+    variazione_stat(f"📉 -{perso:.1f} {cat_persa} | Integrità -{danno}%", "red")
     varia_morale_tutti(stato, -5, "raffiche di vento")
 
 def evento_avvistamento_isola(stato):
-    """TODO-30: casualità strana."""
-    stampa_lenta("🏝️ TERRA! Un'isola sconosciuta si profila all'orizzonte...", "cyan", attrs=["bold"])
+    """TODO-30: casualità con bonus/penalità albatro (fix TODO-34)."""
+    stampa_lenta("🏝️  TERRA! Un'isola sconosciuta si profila all'orizzonte...", "cyan", attrs=["bold"])
+
+    # TODO-34: se albatro ucciso gli indigeni dell'isola sono più aggressivi
+    albatro_ucciso = stato.get('albatro_ucciso', False)
     risultato = random.randint(1, 4)
+
     if risultato == 1:
-        stampa_lenta("🌿 L'isola è disabitata! Trovate frutta fresca e acqua dolce in abbondanza.", "green")
-        stato['scorte']['frutta'] += random.uniform(10, 20)
-        stato['scorte']['acqua'] += random.uniform(10, 20)
-        varia_morale_tutti(stato, +10, "isola provvidenziale")
+        if albatro_ucciso:
+            stampa_lenta("🐊 L'isola sembra fertile ma gli indigeni vi attaccano a vista — come se sapessero!", "red", attrs=["bold"])
+            ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
+            for _ in range(2):
+                if ruoli_vivi:
+                    ruolo = random.choice(ruoli_vivi)
+                    rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
+            varia_morale_tutti(stato, -20, "isola maledetta dall'albatro")
+        else:
+            stampa_lenta("🌿 L'isola è disabitata! Trovate frutta fresca e acqua dolce in abbondanza.", "green")
+            stato['scorte']['frutta'] += random.uniform(10, 20)
+            stato['scorte']['acqua'] += random.uniform(10, 20)
+            varia_morale_tutti(stato, +10, "isola provvidenziale")
     elif risultato == 2:
-        stampa_lenta("🐊 L'isola pullula di coccodrilli enormi. Fuggite a nuoto con le bende ai morsi.", "red")
-        ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
-        if ruoli_vivi:
-            rimuovi_membro(stato, random.choice(ruoli_vivi))
-        varia_morale_tutti(stato, -15, "isola maledetta")
+        if albatro_ucciso:
+            stampa_lenta("🐊 L'isola pullula di coccodrilli enormi E di indigeni ostili — doppia trappola!", "red", attrs=["bold"])
+            ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
+            for _ in range(3):
+                if ruoli_vivi:
+                    ruolo = random.choice(ruoli_vivi)
+                    rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
+            varia_morale_tutti(stato, -25, "isola doppiamente maledetta")
+        else:
+            stampa_lenta("🐊 L'isola pullula di coccodrilli enormi. Fuggite a nuoto con le bende ai morsi.", "red")
+            ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
+            if ruoli_vivi:
+                rimuovi_membro(stato, random.choice(ruoli_vivi))
+            varia_morale_tutti(stato, -15, "isola maledetta")
     elif risultato == 3:
-        stampa_lenta("🗺️ L'isola non è sulle carte. Il navigatore aggiorna la rotta: risparmio di tempo!", "green")
+        stampa_lenta("🗺️  L'isola non è sulle carte. Il navigatore aggiorna la rotta: risparmio di tempo!", "green")
         stato['settimane_risparmiate'] = stato.get('settimane_risparmiate', 0) + 1
+        varia_morale_tutti(stato, +5, "scorciatoia trovata")
     else:
-        stampa_lenta("🌫️ L'isola scompare come un miraggio. Un'allucinazione collettiva per la sete.", "yellow")
+        stampa_lenta("🌫️  L'isola scompare come un miraggio. Un'allucinazione collettiva per la sete.", "yellow")
         varia_morale_tutti(stato, -10, "miraggio deludente")
 
-# Registro eventi già accaduti (TODO-15)
+# ==========================================
+# TODO-15: Registro eventi già accaduti
+# Solo eventi UNICI (max 1 volta), separati dagli eventi RIPETIBILI
+# TODO-31: presenti solo gli eventi del regolamento ufficiale
+# ==========================================
+
 EVENTI_UNICI = {
     "uomo_in_mare": evento_uomo_in_mare,
     "perdita_scorte": evento_perdita_scorte,
@@ -572,20 +635,20 @@ EVENTI_RIPETIBILI = {
 
 def gestisci_evento_casuale(stato):
     cprint("\n" + "~"*60, "blue", attrs=["bold"])
-    cprint("⚠️  EVENTO IN MARE!", "yellow", attrs=["bold", "blink"])
+    cprint("⚠️   EVENTO IN MARE!", "yellow", attrs=["bold", "blink"])
 
     eventi_accaduti = stato.get('eventi_accaduti', [])
 
     # TODO-32: albatro max 3 apparizioni
     if stato.get('avvistamenti_albatro', 0) >= 3:
-        eventi_disponibili_ripetibili = {k: v for k, v in EVENTI_RIPETIBILI.items() if k != 'albatro'}
+        eventi_ripetibili_filtrati = {k: v for k, v in EVENTI_RIPETIBILI.items() if k != 'albatro'}
     else:
-        eventi_disponibili_ripetibili = EVENTI_RIPETIBILI
+        eventi_ripetibili_filtrati = EVENTI_RIPETIBILI
 
     eventi_unici_disponibili = {k: v for k, v in EVENTI_UNICI.items() if k not in eventi_accaduti}
 
-    pool = list(eventi_disponibili_ripetibili.values())
-    pool_unici = [(k, v) for k, v in eventi_unici_disponibili.items()]
+    pool_ripetibili = list(eventi_ripetibili_filtrati.values())
+    pool_unici = list(eventi_unici_disponibili.items())
 
     # 50% chance evento unico se disponibili
     if pool_unici and random.random() < 0.5:
@@ -593,8 +656,8 @@ def gestisci_evento_casuale(stato):
         eventi_accaduti.append(nome_ev)
         stato['eventi_accaduti'] = eventi_accaduti
         funzione_ev(stato)
-    elif pool:
-        random.choice(pool)(stato)
+    elif pool_ripetibili:
+        random.choice(pool_ripetibili)(stato)
     else:
         stampa_lenta("🌅 Il mare è calmo. Nessun imprevisto questa settimana.", "cyan")
 
@@ -621,53 +684,53 @@ def introduzione():
     return capitano, 2000
 
 def fase_arruolamento(stato, capitano):
-    """TODO-01/02/03: esattamente 1 per ruolo, costi differenziati, pagamento differito."""
-    pulisci_schermo()
-    cprint("="*60, "green", attrs=["bold"])
-    cprint("🍻 --- LA TAVERNA DEL PORTO (ARRUOLAMENTO) ---", "green", attrs=["bold"])
-    stampa_lenta("Entri in una bettola fumosa. Ogni ruolo richiede un esperto. Il pagamento avverrà a fine viaggio.", "cyan")
-    stampa_lenta("⚠️  Devi ingaggiare ESATTAMENTE 1 persona per ruolo prima di salpare.", "yellow", attrs=["bold"])
-
+    """TODO-01/02/03: esattamente 1 per ruolo obbligatorio, costi differenziati, pagamento differito."""
     ruoli_info = {
         "cuochi": ("🍲 Cuoco", 15),
         "marinai": ("🪢 Marinaio", 10),
-        "meccanici": ("⚙️ Meccanico", 15),
+        "meccanici": ("⚙️  Meccanico", 15),
         "medici": ("🩸 Medico", 25),
         "navigatori": ("🧭 Navigatore", 20),
     }
+    RUOLI_OBBLIGATORI = list(ruoli_info.keys())
 
     while True:
         pulisci_schermo()
         print()
         cprint("="*60, "green", attrs=["bold"])
         cprint("🍻 TAVERNA DEL PORTO - ARRUOLAMENTO (paga a fine viaggio)", "green", attrs=["bold"])
+        stampa_lenta("Devi ingaggiare ESATTAMENTE 1 persona per ogni ruolo prima di salpare.", "yellow")
         print()
-        
+
         for i, (ruolo, (etichetta, costo)) in enumerate(ruoli_info.items(), 1):
             ingaggiato = stato['equipaggio'].get(ruolo, 0) > 0
             stato_str = colored("✅ INGAGGIATO", "green", attrs=["bold"]) if ingaggiato else colored(f"❌ {costo}🪙/sett (fine viaggio)", "red")
-            print(f"{i}. {etichetta:<20} {stato_str}")
+            print(f"  {i}. {etichetta:<22} {stato_str}")
 
         print()
-        cprint(f"🪙 Budget attuale: {stato['budget']}", "cyan")
-        
-        tutti_ingaggiati = all(stato['equipaggio'].get(r, 0) >= 1 for r in ruoli_info)
-        if tutti_ingaggiati:
-            cprint("✅ Tutti i ruoli coperti! Puoi salpare.", "green", attrs=["bold"])
-            print(colored("0.", "red", attrs=["bold"]) + " 🚪 SALPA! (Termina Arruolamento)")
-        else:
-            mancanti = [r for r in ruoli_info if stato['equipaggio'].get(r, 0) == 0]
-            cprint(f"⚠️  Mancano ancora: {', '.join(NOMI_RUOLO[r] for r in mancanti)}", "yellow")
-            print(colored("0.", "red", attrs=["bold"]) + " 🚪 Esci senza ingaggiare tutti (sconsigliato)")
+        cprint(f"🪙 Budget attuale: {stato['budget']:.0f}", "cyan")
 
-        # Opzione aggiuntiva marinai extra
-        print(colored("6.", "magenta") + " 🪢 Ingaggia Marinaio Extra (supporto in combattimento)")
+        tutti_obbligatori = all(stato['equipaggio'].get(r, 0) >= 1 for r in RUOLI_OBBLIGATORI)
+        mancanti = [r for r in RUOLI_OBBLIGATORI if stato['equipaggio'].get(r, 0) == 0]
+
+        if tutti_obbligatori:
+            cprint("✅ Tutti i ruoli coperti! Puoi salpare.", "green", attrs=["bold"])
+            print(colored("\n  0.", "red", attrs=["bold"]) + " 🚢 SALPA! (Termina Arruolamento)")
+        else:
+            cprint(f"⚠️   Mancano ancora: {', '.join(NOMI_RUOLO[r] for r in mancanti)}", "yellow", attrs=["bold"])
+            print(colored("\n  0.", "dark_grey") + " 🚢 Salpa (NON disponibile - ingaggia prima tutti i ruoli)")
+
+        print(colored("  6.", "magenta") + " 🪢 Ingaggia Marinaio Extra (supporto in combattimento)")
 
         scelta = chiedi_scelta(colored("\n👉 Scegli (0-6): ", "magenta", attrs=["bold"]), ['0','1','2','3','4','5','6'])
 
         if scelta == "0":
-            if not tutti_ingaggiati:
-                stampa_lenta("⚠️  Parti senza equipaggio completo. Rischi altissimi!", "red", attrs=["bold"])
+            # TODO-01: BLOCCO OBBLIGATORIO — non si può salpare senza tutti i ruoli
+            if not tutti_obbligatori:
+                cprint(f"\n🚫 IMPOSSIBILE SALPARE! Mancano: {', '.join(NOMI_RUOLO[r] for r in mancanti)}", "red", attrs=["bold"])
+                stampa_lenta("Devi ingaggiare almeno un membro per ogni ruolo.", "red")
+                time.sleep(2)
+                continue
             break
 
         ruoli_lista = list(ruoli_info.keys())
@@ -675,25 +738,28 @@ def fase_arruolamento(stato, capitano):
             idx = int(scelta) - 1
             ruolo_scelto = ruoli_lista[idx]
             etichetta, costo_sett = ruoli_info[ruolo_scelto]
-            
-            if stato['equipaggio'].get(ruolo_scelto, 0) > 0 and scelta != '6':
-                cprint(f"❌ Hai già un {NOMI_RUOLO[ruolo_scelto]}! Ruolo coperto.", "red")
-                time.sleep(1)
+
+            if stato['equipaggio'].get(ruolo_scelto, 0) > 0:
+                cprint(f"\n❌ Hai già un {NOMI_RUOLO[ruolo_scelto]}! Ogni ruolo richiede esattamente 1 membro.", "red")
+                time.sleep(1.5)
                 continue
-            
+
             nome = aggiungi_membro(stato, ruolo_scelto)
-            # TODO-03: non sottrarre subito - registra il debito
-            settimane_stimate = 16
-            costo_totale_stimato = costo_sett * settimane_stimate
+            # TODO-02/03: costo differenziato, registrato come debito (non sottratto subito)
             stato['debito_equipaggio'] = stato.get('debito_equipaggio', 0) + costo_sett
-            stampa_lenta(f"✍️ {etichetta} ingaggiato! Paga: {costo_sett}🪙/sett (da corrispondere a fine viaggio).", "green")
+            # Salviamo il costo/sett per ruolo per il calcolo finale preciso
+            stato['costo_sett_ruolo'] = stato.get('costo_sett_ruolo', {})
+            stato['costo_sett_ruolo'][ruolo_scelto] = stato['costo_sett_ruolo'].get(ruolo_scelto, 0) + costo_sett
+            stampa_lenta(f"  ✍️  {etichetta} ingaggiato! ({costo_sett}🪙/sett — paghi a fine viaggio).", "green")
             time.sleep(0.8)
 
         elif scelta == '6':
-            # Marinaio extra
-            nome = aggiungi_membro(stato, 'marinai')
-            stato['debito_equipaggio'] = stato.get('debito_equipaggio', 0) + ruoli_info['marinai'][1]
-            stampa_lenta(f"✍️ Marinaio extra ingaggiato! Paga: {ruoli_info['marinai'][1]}🪙/sett.", "green")
+            costo_sett = ruoli_info['marinai'][1]
+            aggiungi_membro(stato, 'marinai')
+            stato['debito_equipaggio'] = stato.get('debito_equipaggio', 0) + costo_sett
+            stato['costo_sett_ruolo'] = stato.get('costo_sett_ruolo', {})
+            stato['costo_sett_ruolo']['marinai'] = stato['costo_sett_ruolo'].get('marinai', 0) + costo_sett
+            stampa_lenta(f"  ✍️  Marinaio extra ingaggiato! ({costo_sett}🪙/sett — paghi a fine viaggio).", "green")
             time.sleep(0.8)
 
     if conta_equipaggio(stato) == 0:
@@ -701,7 +767,7 @@ def fase_arruolamento(stato, capitano):
     return True
 
 def fase_acquisto_provviste(stato, capitano):
-    """TODO-04/05/06: 4 categorie, consumi specifici, dimezzamento/raddoppio."""
+    """TODO-04/05/06: 4 categorie, consumi specifici, dimezzamento/raddoppio razioni."""
     pulisci_schermo()
     cprint("="*60, "green", attrs=["bold"])
     cprint("🏪 --- MERCATO DEL PORTO (PROVVISTE) ---", "green", attrs=["bold"])
@@ -712,88 +778,94 @@ def fase_acquisto_provviste(stato, capitano):
     print(f"  🥩 Carne:    {CONSUMI_SETTIMANALI_PER_MEMBRO['carne']} kg/membro/sett  → {COSTI_SCORTE['carne']}🪙/kg")
     print(f"  💧 Acqua:    {CONSUMI_SETTIMANALI_PER_MEMBRO['acqua']} brl/membro/sett → {COSTI_SCORTE['acqua']}🪙/brl")
     print()
-    cprint(f"👥 Equipaggio: {conta_equipaggio(stato)} | 🪙 Budget: {stato['budget']}", "cyan", attrs=["bold"])
+    n_eq = conta_equipaggio(stato)
+    cprint(f"👥 Equipaggio: {n_eq} | 🪙 Budget: {stato['budget']:.0f}", "cyan", attrs=["bold"])
     print()
 
-    acquisti = {}
     simboli = {"verdura": "🥬", "frutta": "🍊", "carne": "🥩", "acqua": "💧"}
     unita = {"verdura": "kg", "frutta": "kg", "carne": "kg", "acqua": "barili"}
 
     costo_totale = 0
     for cat in ["verdura", "frutta", "carne", "acqua"]:
-        n_suggerito = CONSUMI_SETTIMANALI_PER_MEMBRO[cat] * conta_equipaggio(stato) * 10  # 10 settimane
+        # TODO-49: suggerito calcolato correttamente su 10 settimane stimate
+        n_suggerito = CONSUMI_SETTIMANALI_PER_MEMBRO[cat] * n_eq * 10
+        costo_suggerito = n_suggerito * COSTI_SCORTE[cat]
         while True:
             try:
-                qty_str = leggi_input(colored(f"{simboli[cat]} {cat.capitalize()} ({COSTI_SCORTE[cat]}🪙/{unita[cat]}) [suggerito: {n_suggerito:.1f}]: ", "yellow", attrs=["bold"]))
+                prompt = colored(
+                    f"{simboli[cat]} {cat.capitalize()} ({COSTI_SCORTE[cat]}🪙/{unita[cat]}) "
+                    f"[suggerito: {n_suggerito:.1f} = {costo_suggerito:.0f}🪙 | budget rimasto: {stato['budget'] - costo_totale:.0f}🪙]: ",
+                    "yellow", attrs=["bold"]
+                )
+                qty_str = leggi_input(prompt)
                 qty = float(qty_str) if qty_str.strip() else n_suggerito
                 if qty < 0:
-                    raise ValueError
+                    raise ValueError("quantità negativa")
                 costo = qty * COSTI_SCORTE[cat]
                 if costo_totale + costo > stato['budget']:
-                    cprint(f"❌ Non hai abbastanza budget! Budget rimasto: {stato['budget'] - costo_totale:.1f}🪙", "red")
+                    cprint(f"❌ Non hai abbastanza budget! Budget rimasto: {stato['budget'] - costo_totale:.0f}🪙", "red")
                     continue
-                acquisti[cat] = qty
+                stato['scorte'][cat] = qty
                 costo_totale += costo
                 break
-            except (ValueError, Exception):
+            except ValueError:
                 cprint("❌ Inserisci un numero valido.", "red")
 
-    for cat, qty in acquisti.items():
-        stato['scorte'][cat] = qty
-
     stato['budget'] -= costo_totale
-    cprint(f"\n✅ Scorte caricate! Spesi {costo_totale:.1f}🪙 | Budget rimasto: {stato['budget']:.1f}🪙", "green", attrs=["bold"])
+    cprint(f"\n✅ Scorte caricate! Spesi {costo_totale:.0f}🪙 | Budget rimasto: {stato['budget']:.0f}🪙", "green", attrs=["bold"])
 
-    # TODO-06: Step 2 - Controllo e aggiustamento razioni
+    # TODO-06: Step 2 — gestione razioni con dimezzamento/raddoppio
     print()
-    cprint("📋 FASE 2 - GESTIONE RAZIONI", "yellow", attrs=["bold"])
-    stampa_lenta("Puoi dimezzare o raddoppiare le razioni per categoria.", "cyan")
-    stampa_lenta("⚠️ Dimezzare: -5 morale | Raddoppiare: +5 morale (TODO-10)", "yellow")
+    cprint("─"*60, "yellow")
+    cprint("📋 FASE 2 - GESTIONE RAZIONI INIZIALI", "yellow", attrs=["bold"])
+    stampa_lenta("Puoi regolare le razioni per categoria (influenza morale e ammutinamento).", "cyan")
+    print(f"  Dimezzare:   -5 morale, +30 punti ammutinamento")
+    print(f"  Raddoppiare: +5 morale (richiede budget extra)")
     print()
 
     for cat in ["verdura", "frutta", "carne", "acqua"]:
         scelta_razione = chiedi_scelta(
-            colored(f"{simboli[cat]} {cat.capitalize()} ({stato['scorte'][cat]:.1f}): [N] Normale | [D] Dimezza | [R] Raddoppia: ", "magenta"),
+            colored(f"{simboli[cat]} {cat.capitalize()} ({stato['scorte'][cat]:.1f} {unita[cat]}): [N] Normale | [D] Dimezza | [R] Raddoppia: ", "magenta"),
             ['N', 'D', 'R']
         )
         if scelta_razione == 'D':
             stato['scorte'][cat] *= 0.5
             varia_morale_tutti(stato, -5, f"razioni {cat} dimezzate")
+            # TODO-13: razioni ridotte +30 punti ammutinamento
             aggiungi_punti_ammutinamento(stato, 30, "razioni ridotte")
         elif scelta_razione == 'R':
-            stato['scorte'][cat] *= 2.0
-            # Raddoppio costa dal budget? Solo se avanzato
-            costo_extra = stato['scorte'][cat] * 0.5 * COSTI_SCORTE[cat]
+            costo_extra = stato['scorte'][cat] * COSTI_SCORTE[cat]  # costo per la quantità aggiuntiva
             if stato['budget'] >= costo_extra:
+                stato['scorte'][cat] *= 2.0
                 stato['budget'] -= costo_extra
                 varia_morale_tutti(stato, +5, f"razioni {cat} raddoppiate")
-                cprint(f"  💰 Spesi {costo_extra:.1f}🪙 per raddoppiare {cat}", "yellow")
+                cprint(f"  💰 Spesi {costo_extra:.0f}🪙 per raddoppiare {cat} | Budget: {stato['budget']:.0f}🪙", "yellow")
             else:
-                stato['scorte'][cat] *= 0.5  # annulla
-                cprint(f"  ❌ Budget insufficiente per raddoppiare {cat}. Rimaste normali.", "red")
+                cprint(f"  ❌ Budget insufficiente ({costo_extra:.0f}🪙 necessari, hai {stato['budget']:.0f}🪙). Razioni rimaste normali.", "red")
 
     time.sleep(1.5)
     return True
 
 def fase_merci_arsenale(stato, capitano):
-    """TODO-07/08: 6 tipi di merci barattabili, rimuovere legno/carpentiere."""
+    """TODO-07/08: 6 tipi di merci barattabili, legno/carpentiere assenti."""
     pulisci_schermo()
     cprint("="*60, "green", attrs=["bold"])
-    cprint("⚔️ --- L'ARSENALE E IL MERCATO DELLE MERCI ---", "green", attrs=["bold"])
+    cprint("⚔️  --- L'ARSENALE E IL MERCATO DELLE MERCI ---", "green", attrs=["bold"])
     stampa_lenta("Equipaggia la nave con armi e merci da barattare nel Nuovo Mondo.", "cyan")
+    stampa_lenta("Le bottiglie di medicinale curano le epidemie. Le armi difendono dai pirati.", "yellow")
     print()
 
-    # Merci barattabili (TODO-07)
+    # TODO-07: esattamente 6 tipi, TODO-08: niente legno/carpentiere
     catalogo_merci = {
         "bottiglie_medicinale": ("💊 Bottiglie Medicinale", 30),
-        "armi": ("⚔️ Armi", 50),
-        "sale": ("🧂 Sale", 20),
-        "stoffa": ("🧵 Stoffa", 25),
-        "coltelli": ("🔪 Coltelli", 15),
-        "diamanti": ("💎 Diamanti", 200),
+        "armi":                 ("⚔️  Armi", 50),
+        "sale":                 ("🧂 Sale", 20),
+        "stoffa":               ("🧵 Stoffa", 25),
+        "coltelli":             ("🔪 Coltelli", 15),
+        "diamanti":             ("💎 Diamanti", 200),
     }
 
-    cprint(f"🪙 Budget disponibile: {stato['budget']}", "cyan", attrs=["bold"])
+    cprint(f"🪙 Budget disponibile: {stato['budget']:.0f}", "cyan", attrs=["bold"])
     print()
 
     for codice, (nome, costo) in catalogo_merci.items():
@@ -802,53 +874,52 @@ def fase_merci_arsenale(stato, capitano):
             continue
         while True:
             try:
-                qty_str = leggi_input(colored(f"  {nome} ({costo}🪙/unità) - Quante ne vuoi? [0=nessuna]: ", "yellow"))
+                qty_str = leggi_input(colored(f"  {nome} ({costo}🪙/unità) [Budget: {stato['budget']:.0f}🪙] Quante? [0=nessuna]: ", "yellow"))
                 qty = int(qty_str) if qty_str.strip() else 0
+                if qty < 0:
+                    raise ValueError
                 costo_tot = qty * costo
                 if costo_tot > stato['budget']:
-                    cprint(f"  ❌ Non hai abbastanza budget! ({stato['budget']}🪙 rimasti)", "red")
+                    cprint(f"  ❌ Non hai abbastanza budget! ({stato['budget']:.0f}🪙 rimasti)", "red")
                     continue
                 stato['merci'][codice] = stato['merci'].get(codice, 0) + qty
                 if qty > 0:
                     stato['budget'] -= costo_tot
-                    cprint(f"  ✅ Acquistato {qty}x {nome} per {costo_tot}🪙", "green")
+                    cprint(f"  ✅ Acquistato {qty}x {nome} per {costo_tot}🪙 | Rimasto: {stato['budget']:.0f}🪙", "green")
                 break
             except ValueError:
                 cprint("  ❌ Numero non valido.", "red")
 
-    # Armi hanno effetto su ammutinamento/pirateria
+    # TODO-13: nessun cuoco già rilevato qui (verrà controllato all'imbarco)
     if stato['merci'].get('armi', 0) == 0:
-        stampa_lenta("⚠️ Nessuna arma! Vulnerabili agli attacchi.", "yellow", attrs=["bold"])
+        stampa_lenta("\n⚠️  Nessuna arma! Sarete vulnerabili agli attacchi dei pirati.", "yellow", attrs=["bold"])
 
-    cprint(f"\n🪙 Budget rimasto: {stato['budget']}", "cyan", attrs=["bold"])
+    cprint(f"\n🪙 Budget rimasto: {stato['budget']:.0f}", "cyan", attrs=["bold"])
     time.sleep(1.5)
     return True
 
-def viaggio_andata(stato, capitano):
-    """TODO-12/13/14/15+: viaggio con tutti i nuovi sistemi."""
-    pulisci_schermo()
-    cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
-    stampa_lenta(" SALPATE! L'ancora viene strappata dal fondo del porto.", "cyan", ["bold"])
-    cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
-
-    # Gestione cuoco mancante (TODO-13: +30 punti ammutinamento)
-    if stato['equipaggio'].get('cuochi', 0) == 0:
-        aggiungi_punti_ammutinamento(stato, 30, "nessun cuoco a bordo")
-
-    settimane_viaggio = 8
+def _ciclo_viaggio(stato, capitano, fase_nome, settimane_base):
+    """
+    Motore comune per andata e ritorno.
+    Restituisce True se sopravvivono, False in caso di game over.
+    Traccia le settimane reali percorse per il calcolo stipendi (fix TODO-44/47).
+    """
     settimana = 1
+    while True:
+        settimane_totali = settimane_base + stato.get('settimane_extra', 0) - stato.get('settimane_risparmiate', 0)
+        settimane_totali = max(settimane_totali, settimana)  # non può finire prima di iniziare
 
-    while settimana <= settimane_viaggio + stato.get('settimane_extra', 0):
-        cprint(f"\n📅 --- SETTIMANA {settimana} DI ANDATA ---", "yellow", attrs=["bold"])
+        cprint(f"\n📅 --- SETTIMANA {settimana} DI {fase_nome.upper()} (di ~{settimane_totali}) ---", "yellow", attrs=["bold"])
         stampa_risorse(stato)
 
-        # TODO-12: se più della metà ha morale ≤ 30, +1 settimana
+        # TODO-12: se più della metà ha morale ≤ 30, +1 settimana extra
         if equipaggio_basso_morale(stato, 30):
-            stampa_lenta("⚠️ Il morale è a pezzi! La navigazione rallenta terribilmente.", "red", attrs=["bold"])
-            settimane_viaggio += 1
-            cprint(f"📅 Il viaggio si allunga! Ora mancano ancora {settimane_viaggio + stato.get('settimane_extra',0) - settimana} settimane.", "red")
+            stampa_lenta("⚠️   Il morale è a pezzi! La navigazione rallenta terribilmente.", "red", attrs=["bold"])
+            stato['settimane_extra'] = stato.get('settimane_extra', 0) + 1
+            settimane_totali += 1
+            cprint(f"📅 Il viaggio si allunga! Ora mancano ancora {settimane_totali - settimana} settimane.", "red")
 
-        # Evento ogni 2 settimane circa
+        # Evento ogni 2 settimane
         if settimana % 2 == 0:
             gestisci_evento_casuale(stato)
 
@@ -856,21 +927,24 @@ def viaggio_andata(stato, capitano):
         pulisci_schermo()
 
         esito = consuma_scorte_dettagliate(stato)
+        # Tracciamo settimane reali percorse (fix TODO-44)
+        incrementa_settimane(stato)
+
         if esito == "ammutinamento":
             return game_over(
-                "I punti ammutinamento hanno raggiunto il massimo. La ciurma si ribella. "
+                "I punti ammutinamento hanno raggiunto il massimo. La ciurma si ribella.\n"
                 "Ti sgozzano sul ponte mentre l'alba tinge di rosso l'oceano.",
                 stato, capitano
             )
         elif esito == "affondato":
             return game_over("La nave non regge più. L'acqua invade la stiva. Naufragate.", stato, capitano)
         elif esito == "scorte_esaurite":
-            stampa_lenta("☠️ Le scorte di qualche categoria sono esaurite! L'equipaggio soffre.", "red", attrs=["bold"])
+            stampa_lenta("☠️  Le scorte di qualche categoria sono esaurite! L'equipaggio soffre.", "red", attrs=["bold"])
 
-        # TODO-14: ammutinamento a soglia punti (non solo morale)
+        # TODO-14: ammutinamento a soglia punti
         if stato.get('punti_ammutinamento', 0) >= 100:
             return game_over(
-                "L'ammutinamento esplode! Anni di torti si riversano in una notte di fuoco e sangue. "
+                "L'ammutinamento esplode! Anni di torti si riversano in una notte di fuoco e sangue.\n"
                 "Il tuo corpo viene gettato in pasto agli squali.",
                 stato, capitano
             )
@@ -878,12 +952,27 @@ def viaggio_andata(stato, capitano):
         if conta_equipaggio(stato) == 0:
             return game_over("L'ultimo uomo è morto. La nave vaga senza vita verso l'abisso.", stato, capitano)
 
+        if settimana >= settimane_totali:
+            break
         settimana += 1
 
     return True
 
+def viaggio_andata(stato, capitano):
+    """Andata verso il Nuovo Mondo — 8 settimane base."""
+    pulisci_schermo()
+    cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
+    stampa_lenta(" SALPATE! L'ancora viene strappata dal fondo del porto.", "cyan", ["bold"])
+    cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
+
+    # TODO-13: nessun cuoco a bordo = +30 punti ammutinamento
+    if stato['equipaggio'].get('cuochi', 0) == 0:
+        aggiungi_punti_ammutinamento(stato, 30, "nessun cuoco a bordo")
+
+    return _ciclo_viaggio(stato, capitano, "ANDATA", settimane_base=8)
+
 def arrivo_nuovo_mondo(stato, capitano):
-    """TODO-36/37: indigeni armati, scelta far fuoco/contrattare/furto."""
+    """TODO-36/37: indigeni armati, scelta far fuoco / contrattare / furto."""
     pulisci_schermo()
     cprint("🌴" + "="*58 + "🌴", "green", attrs=["bold"])
     stampa_lenta(" TERRA IN VISTA! Il Nuovo Mondo emerge tra la nebbia mattutina.", "green", ["bold"])
@@ -891,11 +980,12 @@ def arrivo_nuovo_mondo(stato, capitano):
 
     stampa_lenta("La barca tocca la spiaggia. Silenzio assordante.", "yellow")
     stampa_lenta("Poi... centinaia di guerrieri emergono dalla foresta, dipinti di ocra rossa.", "red", attrs=["bold"])
-    
-    # TODO-34: se albatro ucciso, gli indigeni sono più aggressivi
-    if stato.get('albatro_ucciso', False):
-        stampa_lenta("⚠️ Gli sciamani agitano le lance — come se sapessero della vostra colpa verso l'albatro!", "red", attrs=["bold"])
-        aggressivita_bonus = 5
+
+    # TODO-34 / TODO-36: aggressività aumentata se albatro ucciso
+    albatro_ucciso = stato.get('albatro_ucciso', False)
+    if albatro_ucciso:
+        stampa_lenta("⚠️  Gli sciamani agitano le lance — come se sapessero della vostra colpa verso l'albatro!", "red", attrs=["bold"])
+        aggressivita_bonus = 3  # malus al tiro per contrattazione e furto
     else:
         aggressivita_bonus = 0
 
@@ -915,87 +1005,90 @@ def arrivo_nuovo_mondo(stato, capitano):
 
     elif scelta == 'C':
         stampa_lenta("🤝 Avanzate lentamente, mani aperte. Offrite i doni.", "cyan")
-        successo = random.randint(1, 10) + stato['equipaggio'].get('navigatori', 0) - aggressivita_bonus
-        if successo >= 5:
+        tiro = random.randint(1, 10) + stato['equipaggio'].get('navigatori', 0) - aggressivita_bonus
+        if tiro >= 5:
             stampa_lenta("✨ Il capo tribù accetta! Inizia il baratto.", "green", attrs=["bold"])
-            stato['fase_baratto'] = True
             return fase_baratto(stato, capitano)
         else:
             stampa_lenta("🩸 Un malinteso! Un guerriero scaglia la lancia. Fuggite!", "red", attrs=["bold"])
             ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
-            for _ in range(2 + aggressivita_bonus // 2):
+            vittime = 2 + aggressivita_bonus
+            for _ in range(vittime):
                 if ruoli_vivi:
                     ruolo = random.choice(ruoli_vivi)
                     rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
             varia_morale_tutti(stato, -20, "contrattazione fallita")
-            stampa_lenta("⚠️ Non avete ottenuto nulla. Dovete ripartire.", "red")
+            stampa_lenta("⚠️  Non avete ottenuto nulla. Dovete ripartire senza merci.", "red")
             return True
 
     elif scelta == 'N':
         stampa_lenta("🌙 Attendete la notte profonda...", "cyan")
         n_marinai = stato['equipaggio'].get('marinai', 0)
-        n_navigatori = stato['equipaggio'].get('navigatori', 0)
-        successo = random.randint(1, 10) + n_marinai + n_navigatori - aggressivita_bonus
-        if successo >= 8:
+        n_nav = stato['equipaggio'].get('navigatori', 0)
+        tiro = random.randint(1, 10) + n_marinai + n_nav - aggressivita_bonus
+        if tiro >= 8:
             stampa_lenta("🥷 Come ombre nella notte, vi infiltrate nel villaggio. Un successo perfetto!", "green", attrs=["bold"])
-            stato['scorte_ritorno'] = True
-            # Rubate qualcosa ma non tanto quanto il baratto
-            stato['perle_rubate'] = random.randint(5, 15)
-            variazione_stat(f"📈 +{stato['perle_rubate']} 🔮 Perle rubate", "green")
+            perle_rubate = random.randint(5, 15)
+            stato['risorse_baratto']['perle'] = stato['risorse_baratto'].get('perle', 0) + perle_rubate
+            variazione_stat(f"📈 +{perle_rubate} 🔮 Perle rubate", "green")
             return True
         else:
             stampa_lenta("🚨 Una trappola! Torce ovunque. Fuggite nel sangue!", "red", attrs=["bold"])
             ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
-            for _ in range(3 + aggressivita_bonus):
+            vittime = 3 + aggressivita_bonus
+            for _ in range(vittime):
                 if ruoli_vivi:
                     ruolo = random.choice(ruoli_vivi)
                     rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
             varia_morale_tutti(stato, -30, "furto fallito")
             aggiungi_punti_ammutinamento(stato, 20, "raid fallito")
             return True
 
 def fase_baratto(stato, capitano):
-    """TODO-38/39/40: baratto con 4 tipologie, 3 offerte ciascuna."""
+    """TODO-38/39/40: baratto con 4 tipologie (sale, stoffa, coltelli, diamanti), 3 offerte ciascuna."""
     pulisci_schermo()
     cprint("="*60, "green", attrs=["bold"])
     cprint("🤝 --- GRANDE BARATTO NEL NUOVO MONDO ---", "green", attrs=["bold"])
     stampa_lenta("Il capo tribù siede sul trono di conchiglie. È tempo di trattare.", "cyan")
+    print()
 
-    # Tabelle di baratto: merce → lista di (oggetto_offerto, quantità_ricevuta_per_unità)
+    # TODO-38: solo le 4 merci barattabili (le bottiglie_medicinale NON si barattano)
     tabelle_baratto = {
         "sale": [
-            ("perle", 3.0, "🔮"),
+            ("perle",     3.0, "🔮"),
             ("manufatti", 2.0, "🗿"),
-            ("spezie", 1.5, "🌶️"),
+            ("spezie",    1.5, "🌶️"),
         ],
         "stoffa": [
-            ("perle", 5.0, "🔮"),
+            ("perle",     5.0, "🔮"),
             ("manufatti", 4.0, "🗿"),
-            ("spezie", 3.0, "🌶️"),
+            ("spezie",    3.0, "🌶️"),
         ],
         "coltelli": [
-            ("perle", 4.0, "🔮"),
+            ("perle",     4.0, "🔮"),
             ("manufatti", 3.0, "🗿"),
-            ("spezie", 2.0, "🌶️"),
+            ("spezie",    2.0, "🌶️"),
         ],
         "diamanti": [
-            ("perle", 20.0, "🔮"),
+            ("perle",     20.0, "🔮"),
             ("manufatti", 15.0, "🗿"),
-            ("spezie", 10.0, "🌶️"),
+            ("spezie",    10.0, "🌶️"),
         ],
     }
 
-    merci_disponibili = {k: v for k, v in stato['merci'].items()
-                        if k in tabelle_baratto and v > 0}
+    # TODO-38: le armi NON si barattano (usate per difesa/tradimento), le bottiglie no
+    merci_barattabili = {k: v for k, v in stato['merci'].items() if k in tabelle_baratto and v > 0}
 
-    if not merci_disponibili:
-        stampa_lenta("❌ Non hai merci barattabili! Il capo tribù ti congeda.", "red", attrs=["bold"])
+    if not merci_barattabili:
+        stampa_lenta("❌ Non hai merci barattabili! Il capo tribù ti congeda deluso.", "red", attrs=["bold"])
         return True
 
-    # TODO-40: salva quantità barattate
+    # TODO-40: inizializza registro quantità barattate
     stato.setdefault('barattato', {"sale": 0, "stoffa": 0, "coltelli": 0, "diamanti": 0})
 
-    for merce, quantita in merci_disponibili.items():
+    for merce, quantita in merci_barattabili.items():
         if quantita <= 0:
             continue
         pulisci_schermo()
@@ -1004,7 +1097,8 @@ def fase_baratto(stato, capitano):
 
         offerte = tabelle_baratto[merce]
         for i, (cosa, tasso, simbolo) in enumerate(offerte, 1):
-            print(f"  {i}. {simbolo} {cosa.capitalize()} → {tasso} {simbolo}/unità di {merce}")
+            guadagno_stimato = quantita * tasso
+            print(f"  {i}. {simbolo} {cosa.capitalize():<12} → {tasso} {simbolo}/unità  (max: {guadagno_stimato:.1f} {simbolo})")
         print(f"  0. Salta (non barattare {merce})")
         print()
 
@@ -1016,15 +1110,15 @@ def fase_baratto(stato, capitano):
         if scelta_offerta == '0':
             continue
 
-        idx_offerta = int(scelta_offerta) - 1
-        cosa, tasso, simbolo = offerte[idx_offerta]
+        idx = int(scelta_offerta) - 1
+        cosa, tasso, simbolo = offerte[idx]
 
         while True:
             try:
                 qty_str = leggi_input(colored(f"  Quante unità di {merce} vuoi barattare? (max {quantita}): ", "yellow"))
                 qty = int(qty_str) if qty_str.strip() else 0
                 if qty < 0 or qty > quantita:
-                    cprint(f"  ❌ Quantità non valida (0-{quantita})", "red")
+                    cprint(f"  ❌ Quantità non valida (0-{int(quantita)})", "red")
                     continue
                 break
             except ValueError:
@@ -1033,24 +1127,27 @@ def fase_baratto(stato, capitano):
         if qty > 0:
             guadagno = qty * tasso
             stato['merci'][merce] -= qty
+            # TODO-40: salva quantità barattate per merce
             stato['barattato'][merce] = stato['barattato'].get(merce, 0) + qty
             stato['risorse_baratto'][cosa] = stato['risorse_baratto'].get(cosa, 0) + guadagno
             cprint(f"  ✅ Barattato {qty}x {merce} → +{guadagno:.1f} {simbolo} {cosa}", "green", attrs=["bold"])
             time.sleep(0.8)
 
-    # TODO-41/42: Tradimento
+    # TODO-41/42: evento tradimento
     evento_tradimento(stato)
 
-    cprint(f"\n📊 RIEPILOGO BARATTO:", "cyan", attrs=["bold"])
+    print()
+    cprint("📊 RIEPILOGO BARATTO:", "cyan", attrs=["bold"])
     for risorsa, qty in stato['risorse_baratto'].items():
         if qty > 0:
-            print(f"  {risorsa.capitalize()}: {qty:.1f}")
+            simboli_r = {"perle": "🔮", "manufatti": "🗿", "spezie": "🌶️"}
+            print(f"  {simboli_r.get(risorsa,'')} {risorsa.capitalize()}: {qty:.1f}")
 
     time.sleep(2)
     return True
 
 def evento_tradimento(stato):
-    """TODO-41/42: rivale capo tribù offre 30 perle per arma, 50% scoperta."""
+    """TODO-41/42: rivale capo tribù offre 30 perle/arma; 50% (75% con albatro) di essere scoperti."""
     if stato['merci'].get('armi', 0) <= 0:
         return
 
@@ -1063,15 +1160,13 @@ def evento_tradimento(stato):
     )
 
     if scelta == 'A':
-        # TODO-42: 50% probabilità essere scoperti, peggiorata se albatro ucciso
-        prob_scoperto = 0.5
+        # TODO-42: prob. scoperta 50%, peggiora a 75% se albatro ucciso
+        prob_scoperto = 0.75 if stato.get('albatro_ucciso', False) else 0.50
         if stato.get('albatro_ucciso', False):
-            prob_scoperto = 0.75  # peggiore con maledizione albatro
-            stampa_lenta("☠️ La maledizione dell'albatro porta sfortuna...", "red")
+            stampa_lenta("☠️  La maledizione dell'albatro porta sfortuna...", "red")
 
         if random.random() < prob_scoperto:
             stampa_lenta("🚨 SIETE SCOPERTI! Il capo tribù urla vendetta!", "red", attrs=["bold"])
-            # Perde armi e viene attaccato
             armi_confiscate = stato['merci']['armi']
             stato['merci']['armi'] = 0
             ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
@@ -1079,121 +1174,106 @@ def evento_tradimento(stato):
                 if ruoli_vivi:
                     ruolo = random.choice(ruoli_vivi)
                     rimuovi_membro(stato, ruolo)
+                    ruoli_vivi = [r for r in stato['equipaggio'] if stato['equipaggio'][r] > 0]
             varia_morale_tutti(stato, -30, "tradimento scoperto")
             aggiungi_punti_ammutinamento(stato, 40, "disonore del tradimento")
+            variazione_stat(f"📉 -{armi_confiscate} armi confiscate", "red")
         else:
             armi_vendute = min(stato['merci']['armi'], 3)
             stato['merci']['armi'] -= armi_vendute
             guadagno = armi_vendute * 30
             stato['risorse_baratto']['perle'] = stato['risorse_baratto'].get('perle', 0) + guadagno
-            stampa_lenta(f"💰 Il tradimento riesce! +{guadagno} perle (vendute {armi_vendute} armi).", "green", attrs=["bold"])
+            stampa_lenta(f"💰 Il tradimento riesce! +{guadagno} 🔮 perle (vendute {armi_vendute} armi).", "green", attrs=["bold"])
     else:
         stampa_lenta("🤝 Rifiuti. Il guerriero scompare nell'oscurità.", "cyan")
         varia_morale_tutti(stato, +5, "onestà premiata")
 
 def viaggio_ritorno(stato, capitano):
-    """TODO-47/48: durata ritorno variabile, scorte dal capo tribù."""
+    """
+    TODO-47: durata ritorno = 8 sett base, -1 con navigatore vivo, +1 se albatro ucciso.
+    TODO-48: capo tribù rifornisce scorte per 3 settimane prima della partenza.
+    """
     pulisci_schermo()
 
-    # TODO-48: capo tribù rifornisce per 3 settimane
+    # TODO-48: rifornimento dal capo tribù per 3 settimane
     stampa_lenta("🎁 Il capo tribù, grato per il commercio, rifornisce la nave per 3 settimane di viaggio.", "green", attrs=["bold"])
     n = conta_equipaggio(stato)
     for cat, consumo in CONSUMI_SETTIMANALI_PER_MEMBRO.items():
-        stato['scorte'][cat] += consumo * n * 3
-    variazione_stat("📈 Scorte per 3 settimane caricate dal capo tribù!", "green")
+        aggiunte = consumo * n * 3
+        stato['scorte'][cat] += aggiunte
+    variazione_stat("📈 Scorte per 3 settimane caricate gratuitamente!", "green")
 
-    # TODO-47: durata ritorno
-    settimane_ritorno = 1 if stato['equipaggio'].get('navigatori', 0) > 0 else 2
-    if stato.get('albatro_ucciso', False):
-        settimane_ritorno += 1
-        stampa_lenta("☠️ La maledizione dell'albatro prolunga il ritorno di 1 settimana.", "red")
-
-    # Ma il ritorno è in media 8 settimane base, modificato dai fattori sopra
+    # TODO-47: calcolo durata ritorno corretto e coerente
     settimane_base_ritorno = 8
-    settimane_ritorno_totali = settimane_base_ritorno + (0 if stato['equipaggio'].get('navigatori', 0) > 0 else 1)
+    if stato['equipaggio'].get('navigatori', 0) > 0:
+        settimane_base_ritorno -= 1   # navigatore vivo → -1 settimana
+        stampa_lenta("🧭 Il navigatore traccia la rotta di ritorno più efficiente. -1 settimana!", "green")
     if stato.get('albatro_ucciso', False):
-        settimane_ritorno_totali += 1
+        settimane_base_ritorno += 1   # maledizione albatro → +1 settimana
+        stampa_lenta("☠️  La maledizione dell'albatro prolunga il ritorno di 1 settimana.", "red")
 
     cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
-    stampa_lenta(f" IL RITORNO. {settimane_ritorno_totali} settimane di oceano ancora.", "cyan", ["bold"])
+    stampa_lenta(f" IL RITORNO. ~{settimane_base_ritorno} settimane di oceano ancora.", "cyan", ["bold"])
     cprint("🌊" + "="*58 + "🌊", "blue", attrs=["bold"])
 
-    for settimana in range(1, settimane_ritorno_totali + 1):
-        cprint(f"\n📅 --- SETTIMANA {settimana} DI RITORNO ---", "yellow", attrs=["bold"])
-        stampa_risorse(stato)
-
-        # TODO-12
-        if equipaggio_basso_morale(stato, 30):
-            stampa_lenta("⚠️ Il morale è a pezzi. Il viaggio rallenta.", "red")
-            settimane_ritorno_totali += 1
-
-        if settimana % 2 == 0:
-            gestisci_evento_casuale(stato)
-
-        leggi_input(colored("\n📖 [Premi Invio, stringendo i denti...] ", "dark_grey"))
-        pulisci_schermo()
-
-        esito = consuma_scorte_dettagliate(stato)
-        if esito == "ammutinamento":
-            return game_over("L'ammutinamento sul ritorno. Così vicini alla gloria...", stato, capitano)
-        elif esito == "affondato":
-            return game_over("La nave non regge. Naufraghi a pochi giorni da Siviglia.", stato, capitano)
-
-        if stato.get('punti_ammutinamento', 0) >= 100:
-            return game_over("La ciurma si ribella durante il ritorno. Fine ingloriosa.", stato, capitano)
-
-        if conta_equipaggio(stato) == 0:
-            return game_over("L'ultimo uomo è morto. La nave vaga vuota verso l'abisso.", stato, capitano)
-
-    return True
+    return _ciclo_viaggio(stato, capitano, "RITORNO", settimane_base=settimane_base_ritorno)
 
 def asta_nave(stato):
-    """TODO-45: asta della nave con offerte specifiche."""
+    """TODO-45: asta della nave con offerte specifiche graduali in base all'integrità."""
     pulisci_schermo()
     cprint("⚓ --- ASTA DELLA NAVE ---", "yellow", attrs=["bold"])
     stampa_lenta("Il galeone è consumato dai viaggi. Vuoi venderlo all'asta?", "cyan")
+    print()
 
-    offerte_asta = {
-        1: ("Un pescatore curioso", 50),
-        2: ("Un mercante in bancarotta", 300),
-        3: ("Un armatore minore", 350),
-        4: ("La Compagnia delle Indie", 600),
-        5: ("Un nobile spagnolo", 850),
-        6: ("Il Re di Portogallo", 1200),
-    }
+    # TODO-49: offerte validate e coerenti
+    offerte_asta = [
+        ("Un pescatore curioso",          50),
+        ("Un mercante in bancarotta",     300),
+        ("Un armatore minore",            350),
+        ("La Compagnia delle Indie",      600),
+        ("Un nobile spagnolo",            850),
+        ("Il Re di Portogallo",          1200),
+    ]
 
     integrita = stato.get('integrita', 100)
-    # Offerte disponibili in base all'integrità
-    if integrita >= 80:
-        offerte_disponibili = offerte_asta
-    elif integrita >= 50:
-        offerte_disponibili = {k: v for k, v in offerte_asta.items() if k <= 5}
-    elif integrita >= 25:
-        offerte_disponibili = {k: v for k, v in offerte_asta.items() if k <= 3}
-    else:
-        offerte_disponibili = {1: offerte_asta[1]}
+    cprint(f"🛡️  Integrità nave: {integrita}%", "cyan")
 
+    if integrita >= 80:
+        max_offerta = 6
+    elif integrita >= 60:
+        max_offerta = 5
+    elif integrita >= 40:
+        max_offerta = 4
+    elif integrita >= 20:
+        max_offerta = 3
+    else:
+        max_offerta = 1
+
+    offerte_disponibili = offerte_asta[:max_offerta]
+    stampa_lenta(f"In base all'integrità hai {len(offerte_disponibili)} offerte disponibili:", "yellow")
     print()
-    cprint(f"🛡️ Integrità nave: {integrita}% → offerte disponibili:", "cyan")
-    for k, (nome, prezzo) in offerte_disponibili.items():
-        print(f"  {k}. {nome}: {prezzo}🪙")
+
+    for i, (nome, prezzo) in enumerate(offerte_disponibili, 1):
+        print(f"  {i}. {nome:<30} {prezzo}🪙")
     print(f"  0. Non vendere la nave")
+    print()
 
     scelta = chiedi_scelta(
-        colored(f"👉 Scegli l'offerente (0-{max(offerte_disponibili.keys())}): ", "magenta", attrs=["bold"]),
-        ['0'] + [str(k) for k in offerte_disponibili.keys()]
+        colored(f"👉 Scegli l'offerente (0-{len(offerte_disponibili)}): ", "magenta", attrs=["bold"]),
+        ['0'] + [str(i) for i in range(1, len(offerte_disponibili)+1)]
     )
 
     if scelta == '0':
         stampa_lenta("🚢 Tieni la nave. Potrebbe servire per il prossimo viaggio.", "cyan")
         return 0
     else:
-        _, (nome_offerente, prezzo) = list(offerte_disponibili.items())[int(scelta)-1]
+        idx = int(scelta) - 1
+        nome_offerente, prezzo = offerte_disponibili[idx]
         stampa_lenta(f"✅ Venduta a {nome_offerente} per {prezzo}🪙!", "green", attrs=["bold"])
         return prezzo
 
 def conclusione(capitano, stato):
-    """TODO-43/44/46: calcolo profitti, costo equipaggio, 3 finali."""
+    """TODO-43/44/46: calcolo profitti con fattore casuale, costo equipaggio REALE, 3 finali."""
     pulisci_schermo()
     dati = carica_dati()
 
@@ -1201,7 +1281,7 @@ def conclusione(capitano, stato):
     stampa_lenta(f" LE CAMPANE DI SIVIGLIA! Capitano {capitano}, avete ingannato la Mietitrice.", "yellow", ["bold"])
     cprint("🔔" + "="*58 + "🔔", "yellow", attrs=["bold"])
 
-    stampa_lenta("\nLa folla ammutolisce nel vedere il relitto annerito scivolare nel porto.", "cyan")
+    stampa_lenta("\nLa folla ammutolisce nel vedere il galeone annerito scivolare nel porto.", "cyan")
 
     # TODO-43: Profitto = perle × valore + manufatti × valore + spezie × valore × fattore casuale
     valori_risorse = {"perle": 10, "manufatti": 15, "spezie": 20}
@@ -1215,32 +1295,35 @@ def conclusione(capitano, stato):
             fattore = random.choice(fattori)
             valore = qty * valori_risorse[risorsa] * fattore
             profitto_baratto += valore
-            stampa_lenta(f"  {risorsa.capitalize()}: {qty:.1f} × {valori_risorse[risorsa]}🪙 × {fattore} = {valore:.0f}🪙", "green")
-            time.sleep(0.5)
-
-    # Perle rubate (furto di notte)
-    if stato.get('perle_rubate', 0) > 0:
-        valore_rubato = stato['perle_rubate'] * valori_risorse['perle']
-        profitto_baratto += valore_rubato
-        stampa_lenta(f"  🔮 Perle rubate: {stato['perle_rubate']} × {valori_risorse['perle']}🪙 = {valore_rubato}🪙", "yellow")
+            segno_f = colored(f"×{fattore}", "green" if fattore >= 1 else "red", attrs=["bold"])
+            stampa_lenta(f"  {risorsa.capitalize()}: {qty:.1f} × {valori_risorse[risorsa]}🪙 {segno_f} = {valore:.0f}🪙", "green")
+            time.sleep(0.4)
 
     stato['budget'] += profitto_baratto
 
-    # TODO-44: costo equipaggio a fine viaggio
+    # TODO-44: costo equipaggio basato sulle settimane REALMENTE percorse
     print()
-    cprint("💰 --- PAGAMENTO EQUIPAGGIO ---", "yellow", attrs=["bold"])
-    settimane_totali = 16  # stima (andata 8 + ritorno 8)
+    cprint("💰 --- PAGAMENTO EQUIPAGGIO (settimane effettive) ---", "yellow", attrs=["bold"])
+    settimane_reali = stato.get('settimane_percorse', 16)  # fallback a 16 se non tracciato
+    cprint(f"  Settimane totali percorse: {settimane_reali}", "cyan")
+
     costo_totale_equipaggio = 0
+    costo_sett_ruolo = stato.get('costo_sett_ruolo', {})
+
     for ruolo, n_persone in stato['equipaggio'].items():
-        if n_persone > 0 and ruolo in COSTI_RUOLO:
-            costo_ruolo = COSTI_RUOLO[ruolo] * n_persone * settimane_totali
+        # Contiamo anche i naufraghi (gratuiti): solo i membri col costo nel registro
+        costo_sett = costo_sett_ruolo.get(ruolo, 0)
+        if costo_sett > 0:
+            costo_ruolo = costo_sett * settimane_reali
             costo_totale_equipaggio += costo_ruolo
-            stampa_lenta(f"  {NOMI_RUOLO[ruolo]}: {n_persone}x {COSTI_RUOLO[ruolo]}🪙/sett × {settimane_totali} sett = {costo_ruolo}🪙", "yellow")
+            stampa_lenta(f"  {NOMI_RUOLO.get(ruolo, ruolo)}: {costo_sett}🪙/sett × {settimane_reali} sett = {costo_ruolo:.0f}🪙", "yellow")
             time.sleep(0.3)
+        elif n_persone > 0 and ruolo not in costo_sett_ruolo:
+            stampa_lenta(f"  {NOMI_RUOLO.get(ruolo, ruolo)}: naufraghi (nessun costo)", "dark_grey")
 
     stato['budget'] -= costo_totale_equipaggio
     if stato['budget'] < 0:
-        stampa_lenta(f"⚠️ Non hai abbastanza per pagare tutta la ciurma! Debito: {abs(stato['budget'])}🪙", "red", attrs=["bold"])
+        stampa_lenta(f"⚠️  Non hai abbastanza per pagare la ciurma! Debito: {abs(stato['budget']):.0f}🪙", "red", attrs=["bold"])
 
     # Asta nave (TODO-45)
     print()
@@ -1251,17 +1334,23 @@ def conclusione(capitano, stato):
     if stato.get('albatro_benevolo', False):
         bonus = 500
         stato['budget'] += bonus
-        stampa_lenta(f"✨ Benedizione dell'albatro! Bonus fortuna: +{bonus}🪙", "yellow", attrs=["bold"])
+        stampa_lenta(f"✨ Benedizione dell'albatro! Bonus fortuna divina: +{bonus}🪙", "yellow", attrs=["bold"])
 
-    cprint(f"\n📊 BILANCIO FINALE: {stato['budget']:.0f}🪙", "cyan", attrs=["bold"])
-    print(f"  Profitto baratto: {profitto_baratto:.0f}🪙")
-    print(f"  Costo equipaggio: -{costo_totale_equipaggio}🪙")
-    print(f"  Ricavo nave: +{ricavo_nave}🪙")
+    budget_finale = stato['budget']
+    print()
+    cprint("─"*60, "cyan")
+    cprint(f"📊 BILANCIO FINALE: {budget_finale:.0f}🪙", "cyan", attrs=["bold"])
+    print(f"  Profitto baratto:     +{profitto_baratto:.0f}🪙")
+    print(f"  Costo equipaggio:     -{costo_totale_equipaggio:.0f}🪙")
+    print(f"  Ricavo nave:          +{ricavo_nave}🪙")
+    if stato.get('albatro_benevolo'):
+        print(f"  Benedizione albatro:  +500🪙")
+    cprint("─"*60, "cyan")
 
-    # TODO-46: 3 finali distinti
+    # TODO-46: 3 finali distinti con soglie precise
     esito = ""
     print()
-    if stato['budget'] > 2500:
+    if budget_finale > 2500:
         dati["stats"]["vittorie_epiche"] += 1
         esito = "Vittoria Epica"
         cprint("\n👑 ═══════════════════════════════════", "yellow", attrs=["bold"])
@@ -1270,10 +1359,10 @@ def conclusione(capitano, stato):
         stampa_lenta("Le campane suonano per tre giorni! Il Re in persona ti riceve.", "green", ["bold"])
         stampa_lenta("Compri terre, un titolo nobiliare e un'intera flotta mercantile.", "green")
         stampa_lenta("Il tuo nome sarà scritto nei libri di storia per sempre.", "yellow", ["bold"])
-    elif stato['budget'] > 0:
+    elif budget_finale > 0:
         dati["stats"]["vittorie_pirro"] += 1
         esito = "Vittoria di Pirro"
-        cprint("\n⚖️ ═══════════════════════════════════", "cyan", attrs=["bold"])
+        cprint("\n⚖️  ═══════════════════════════════════", "cyan", attrs=["bold"])
         cprint("   VITTORIA DI PIRRO - SOPRAVVISSUTO!", "cyan", attrs=["bold"])
         cprint("═══════════════════════════════════", "cyan", attrs=["bold"])
         stampa_lenta("Sei vivo. I debiti sono saldati. Ma i sogni di gloria restano sogni.", "yellow")
@@ -1296,6 +1385,63 @@ def conclusione(capitano, stato):
 # MOTORE DI GIOCO E MENU
 # ==========================================
 
+def crea_stato_iniziale():
+    """Crea uno stato partita pulito con tutti i campi necessari (TODO-50)."""
+    return {
+        "fase": "inizio",
+        "budget": 2000,
+        "scorte": {"verdura": 0.0, "frutta": 0.0, "carne": 0.0, "acqua": 0.0},
+        "merci": {
+            "bottiglie_medicinale": 0,
+            "armi": 0,
+            "sale": 0,
+            "stoffa": 0,
+            "coltelli": 0,
+            "diamanti": 0,
+        },
+        "risorse_baratto": {"perle": 0.0, "manufatti": 0.0, "spezie": 0.0},
+        "barattato": {"sale": 0, "stoffa": 0, "coltelli": 0, "diamanti": 0},
+        "morale_individuale": {},
+        "punti_ammutinamento": 0,
+        "integrita": 100,
+        "equipaggio": {
+            "marinai": 0,
+            "cuochi": 0,
+            "meccanici": 0,
+            "medici": 0,
+            "navigatori": 0,
+        },
+        "debito_equipaggio": 0,
+        "costo_sett_ruolo": {},       # costo/sett per ruolo per calcolo finale preciso
+        "albatro_ucciso": False,
+        "albatro_benevolo": False,
+        "avvistamenti_albatro": 0,
+        "eventi_accaduti": [],
+        "settimane_risparmiate": 0,
+        "settimane_extra": 0,
+        "settimane_percorse": 0,      # tracciamento reale per stipendi (fix TODO-44)
+        "naufraghi_tot": 0,
+        "esito": "In corso",
+    }
+
+def normalizza_stato(stato):
+    """
+    TODO-50: compatibilità con vecchi salvataggi — aggiunge campi mancanti senza
+    sovrascrivere quelli già presenti.
+    """
+    default = crea_stato_iniziale()
+    for chiave, valore_default in default.items():
+        if chiave not in stato:
+            stato[chiave] = valore_default
+    # Normalizza sotto-dizionari
+    for cat in ["verdura", "frutta", "carne", "acqua"]:
+        stato['scorte'].setdefault(cat, 0.0)
+    for m in ["bottiglie_medicinale", "armi", "sale", "stoffa", "coltelli", "diamanti"]:
+        stato['merci'].setdefault(m, 0)
+    for r in ["perle", "manufatti", "spezie"]:
+        stato['risorse_baratto'].setdefault(r, 0.0)
+    return stato
+
 def esegui_partita(nuova=True, dati_salvati=None):
     capitano = "Sconosciuto"
     stato_partita = {}
@@ -1303,59 +1449,17 @@ def esegui_partita(nuova=True, dati_salvati=None):
     try:
         if nuova:
             capitano, budget_iniziale = introduzione()
-            stato_partita = {
-                "fase": "inizio",
-                "budget": budget_iniziale,
-                "scorte": {"verdura": 0.0, "frutta": 0.0, "carne": 0.0, "acqua": 0.0},
-                "merci": {
-                    "bottiglie_medicinale": 0,
-                    "armi": 0,
-                    "sale": 0,
-                    "stoffa": 0,
-                    "coltelli": 0,
-                    "diamanti": 0
-                },
-                "risorse_baratto": {"perle": 0, "manufatti": 0, "spezie": 0},
-                "barattato": {"sale": 0, "stoffa": 0, "coltelli": 0, "diamanti": 0},
-                "morale_individuale": {},
-                "punti_ammutinamento": 0,
-                "integrita": 100,
-                "equipaggio": {
-                    "marinai": 0,
-                    "cuochi": 0,
-                    "meccanici": 0,
-                    "medici": 0,
-                    "navigatori": 0
-                },
-                "debito_equipaggio": 0,
-                "albatro_ucciso": False,
-                "albatro_benevolo": False,
-                "avvistamenti_albatro": 0,
-                "eventi_accaduti": [],
-                "settimane_risparmiate": 0,
-                "settimane_extra": 0,
-            }
+            stato_partita = crea_stato_iniziale()
+            stato_partita["budget"] = budget_iniziale
         else:
             pulisci_schermo()
-            stato_partita = dati_salvati["stato"]
+            stato_partita = normalizza_stato(dati_salvati["stato"])
             capitano = dati_salvati["capitano"]
-            # Compatibilità con vecchi salvataggi
-            stato_partita.setdefault("scorte", {"verdura": 0.0, "frutta": 0.0, "carne": 0.0, "acqua": 0.0})
-            stato_partita.setdefault("merci", {"bottiglie_medicinale": 0, "armi": 0, "sale": 0, "stoffa": 0, "coltelli": 0, "diamanti": 0})
-            stato_partita.setdefault("risorse_baratto", {"perle": 0, "manufatti": 0, "spezie": 0})
-            stato_partita.setdefault("barattato", {"sale": 0, "stoffa": 0, "coltelli": 0, "diamanti": 0})
-            stato_partita.setdefault("morale_individuale", {})
-            stato_partita.setdefault("punti_ammutinamento", 0)
-            stato_partita.setdefault("eventi_accaduti", [])
-            stato_partita.setdefault("settimane_risparmiate", 0)
-            stato_partita.setdefault("settimane_extra", 0)
-            stato_partita.setdefault("albatro_ucciso", False)
-            stato_partita.setdefault("albatro_benevolo", False)
-            stato_partita.setdefault("avvistamenti_albatro", 0)
             cprint(f"\n⚓ Bentornato a bordo, Capitano {capitano}!", "green", attrs=["bold"])
-            time.sleep(1)
+            cprint(f"   Fase corrente: {stato_partita['fase']} | Budget: {stato_partita['budget']:.0f}🪙", "cyan")
+            time.sleep(1.5)
 
-        # Avanzamento fasi
+        # Avanzamento fasi sequenziale
         if stato_partita["fase"] == "inizio":
             stato_partita["fase"] = "arruolamento"
 
@@ -1385,17 +1489,16 @@ def esegui_partita(nuova=True, dati_salvati=None):
             conclusione(capitano, stato_partita)
 
     except InterruptedError:
-        cprint("\n\n⏸️  GIOCO IN PAUSA (Tasto ESC intercettato)", "yellow", attrs=["bold"])
-        nome = input(colored("👉 Inserisci il nome del salvataggio: ", "cyan")).strip()
+        cprint("\n\n⏸️   GIOCO IN PAUSA (Tasto ESC intercettato)", "yellow", attrs=["bold"])
+        nome = input(colored("👉 Inserisci il nome del salvataggio (Invio per automatico): ", "cyan")).strip()
         if not nome:
-            nome = f"Salvataggio_di_{capitano}_{random.randint(100,999)}"
+            nome = f"Salvataggio_{capitano}_{random.randint(100,999)}"
         dati = carica_dati()
         stato_partita["esito"] = "In corso"
         dati["salvataggi"][nome] = {"capitano": capitano, "stato": stato_partita}
         salva_dati(dati)
         cprint(f"\n✅ Partita salvata come '{nome}'!", "green", attrs=["bold"])
         time.sleep(2)
-        return
 
 def menu_principale():
     while True:
@@ -1403,22 +1506,22 @@ def menu_principale():
         dati = carica_dati()
 
         cprint("="*60, "cyan", attrs=["bold"])
-        cprint("  ☠️   LA MALEDIZIONE D'ORO - MENU PRINCIPALE   ☠️  ", "yellow", "on_grey", attrs=["bold"])
+        cprint("  ☠️    LA MALEDIZIONE D'ORO - MENU PRINCIPALE   ☠️  ", "yellow", "on_grey", attrs=["bold"])
         cprint("="*60, "cyan", attrs=["bold"])
 
-        print(colored("1.", "magenta", attrs=["bold"]) + " 🏴‍☠️ Nuova Partita")
+        print(colored("  1.", "magenta", attrs=["bold"]) + " 🏴‍☠️  Nuova Partita")
 
         salvataggi_in_corso = {k: v for k, v in dati["salvataggi"].items()
                                if v["stato"].get("esito") == "In corso"}
 
         if salvataggi_in_corso:
-            print(colored("2.", "magenta", attrs=["bold"]) + " ⚓ Continua Partita")
+            print(colored("  2.", "magenta", attrs=["bold"]) + f" ⚓ Continua Partita ({len(salvataggi_in_corso)} salvatagg{'io' if len(salvataggi_in_corso)==1 else 'i'})")
         else:
-            print(colored("2.", "dark_grey") + " ⚓ Continua Partita (Nessun salvataggio disponibile)")
+            print(colored("  2.", "dark_grey") + " ⚓ Continua Partita (Nessun salvataggio)")
 
-        print(colored("3.", "magenta", attrs=["bold"]) + " 📊 Statistiche Globali")
-        print(colored("4.", "magenta", attrs=["bold"]) + " 🔍 Esplora Archivi Partita")
-        print(colored("0.", "magenta", attrs=["bold"]) + " 🚪 Esci dal Gioco")
+        print(colored("  3.", "magenta", attrs=["bold"]) + " 📊 Statistiche Globali")
+        print(colored("  4.", "magenta", attrs=["bold"]) + " 🔍 Esplora Archivi Partita")
+        print(colored("  0.", "magenta", attrs=["bold"]) + " 🚪 Esci dal Gioco")
 
         scelta = input(colored("\n👉 Scegli un'opzione: ", "magenta", attrs=["bold"])).strip()
 
@@ -1430,11 +1533,17 @@ def menu_principale():
                 cprint("\n❌ Inizia prima una nuova avventura!", "red")
                 time.sleep(1.5)
             else:
-                print("\n⚓ Salvataggi disponibili:")
+                pulisci_schermo()
+                print("\n⚓ Salvataggi disponibili:\n")
                 nomi = list(salvataggi_in_corso.keys())
                 for i, n in enumerate(nomi, 1):
-                    print(f"   {i}. {n} (Capitano: {salvataggi_in_corso[n]['capitano']}, Fase: {salvataggi_in_corso[n]['stato']['fase']})")
-                scelta_s = input("\n👉 Numero o nome del salvataggio: ").strip()
+                    sv = salvataggi_in_corso[n]
+                    fase = sv['stato'].get('fase', '?')
+                    budget = sv['stato'].get('budget', 0)
+                    print(f"  {i}. {n}")
+                    print(f"     Capitano: {sv['capitano']} | Fase: {fase} | Budget: {budget:.0f}🪙")
+                    print()
+                scelta_s = input(colored("👉 Numero o nome del salvataggio: ", "cyan")).strip()
                 da_caricare = None
                 if scelta_s.isdigit() and 1 <= int(scelta_s) <= len(nomi):
                     da_caricare = nomi[int(scelta_s) - 1]
@@ -1451,7 +1560,7 @@ def menu_principale():
 
         elif scelta == "4":
             pulisci_schermo()
-            print("\n🔍 --- CERCA ARCHIVIO PARTITA ---")
+            print("\n🔍 --- ARCHIVI PARTITA ---\n")
             if not dati["salvataggi"]:
                 cprint("❌ Nessuna partita negli archivi.", "red")
                 time.sleep(1.5)
@@ -1459,7 +1568,8 @@ def menu_principale():
             nomi_archivi = list(dati["salvataggi"].keys())
             for i, n in enumerate(nomi_archivi, 1):
                 esito = dati["salvataggi"][n]["stato"].get("esito", "Sconosciuto")
-                print(f"   {i}. {n} [{esito}]")
+                capitano_arch = dati["salvataggi"][n]["capitano"]
+                print(f"  {i}. {n}  [{esito}]  — Cap. {capitano_arch}")
             ricerca = input(colored("\n👉 Nome o numero: ", "cyan")).strip()
             da_cercare = None
             if ricerca.isdigit() and 1 <= int(ricerca) <= len(nomi_archivi):
@@ -1471,20 +1581,29 @@ def menu_principale():
                 s = dati["salvataggi"][da_cercare]
                 sp = s['stato']
                 cprint(f"\n📜 DETTAGLI: {da_cercare}", "yellow", attrs=["bold"])
-                print(f"🏴‍☠️ Capitano: {s['capitano']} | 📌 Stato: {sp.get('esito','?')} | 🗺️ Fase: {sp.get('fase','?')}")
-                cprint("\n💰 RISORSE:", "green")
+                print(f"🏴‍☠️  Capitano: {s['capitano']} | 📌 Esito: {sp.get('esito','?')} | 🗺️  Fase: {sp.get('fase','?')}")
+                print()
+                cprint("💰 RISORSE:", "green")
                 print(f"  🪙 Budget: {sp.get('budget', 0):.0f}")
                 for cat, qty in sp.get('scorte', {}).items():
                     print(f"  {cat.capitalize()}: {qty:.1f}")
-                print(f"  🛡️ Integrità: {sp.get('integrita',100)}%")
-                print(f"  ⚠️ Punti Ammutinamento: {sp.get('punti_ammutinamento',0)}")
-                cprint("\n👥 EQUIPAGGIO:", "cyan")
+                print(f"  🛡️  Integrità: {sp.get('integrita',100)}%")
+                print(f"  ⚠️  Punti Ammutinamento: {sp.get('punti_ammutinamento',0)}")
+                print(f"  🗓️  Settimane percorse: {sp.get('settimane_percorse', 0)}")
+                print()
+                cprint("👥 EQUIPAGGIO:", "cyan")
                 for ruolo, n_p in sp.get('equipaggio', {}).items():
-                    print(f"  {NOMI_RUOLO.get(ruolo, ruolo)}: {n_p}")
-                cprint("\n📦 MERCI:", "magenta")
+                    if n_p > 0:
+                        print(f"  {NOMI_RUOLO.get(ruolo, ruolo)}: {n_p}")
+                print()
+                cprint("📦 MERCI:", "magenta")
                 for merce, qty in sp.get('merci', {}).items():
                     if qty > 0:
                         print(f"  {merce}: {qty}")
+                cprint("🔮 RISORSE BARATTO:", "yellow")
+                for r, qty in sp.get('risorse_baratto', {}).items():
+                    if qty > 0:
+                        print(f"  {r.capitalize()}: {qty:.1f}")
                 input(colored("\n📖 [Premi Invio per tornare] ", "dark_grey"))
             else:
                 cprint("\n❌ Partita non trovata.", "red")
